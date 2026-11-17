@@ -693,6 +693,7 @@ class Fighter{
     if(this.ctrl==='human'){
       const k=KEYMAP[this.idx];
       ix=(keys[k.r]?1:0)-(keys[k.l]?1:0); iy=(keys[k.d]?1:0)-(keys[k.u]?1:0);
+      const tv=touchInput(this.idx); if(tv&&!ix&&!iy){ix=tv[0]; iy=tv[1];}   // a touch stick (touch.js), when no key is held
     } else [ix,iy]=this.ai(dt,g);
     const il=Math.hypot(ix,iy); if(il>1){ix/=il;iy/=il;}
     arenaEnv(g,this,dt);   // the arena sets this.env for this tick (gutters, hot plates...): the same rules for human and CPU
@@ -1710,8 +1711,11 @@ function renderGame(){
   const bg=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.7);
   bg.addColorStop(0,'#14152a'); bg.addColorStop(1,'#050509');
   ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
-  const top=110, availH=H-top-10;
-  const s0=Math.min(W/(2*R+70),availH/(2*R+70)), s=s0*(CAM_ZOOM+g.zoomP+NEAR_ZOOM*g.nearK-(CAM_ZOOM-1)*g.finalK);   // near-death closes in; the final view pulls back
+  // the HUD takes 110 px on a desktop-sized window; on a phone it is compact (style.css) and the arena starts just below it
+  const compact=!(W>=768&&H>=640), side=compact&&H<=500&&W>H;   // side: a phone held sideways (style.css moves the HUD into the corners)
+  const top=!compact?110:side?8:Math.round(g.hudH||70)+6, availH=H-top-10;
+  const fw=W/(2*R+70), fh=availH/(2*R+70), zb=(fw<fh||compact)?1:CAM_ZOOM;   // a phone (or any narrow screen) shows the whole arena instead of zooming past its edges
+  const s0=Math.min(fw,fh), s=s0*(zb+g.zoomP+NEAR_ZOOM*g.nearK-(zb-1)*g.finalK);   // near-death closes in; the final view pulls back
   // keep every living spinner fully on screen and the view centre inside the arena
   let camX=g.camX*(1-g.finalK), camY=g.camY*(1-g.finalK);
   const hw=W/(2*s)-12, hh=availH/(2*s)-12;
@@ -1777,9 +1781,10 @@ function renderGame(){
     ctx.font='900 110px ui-sans-serif,system-ui'; ctx.fillStyle=`rgba(255,160,60,${clamp(g.fightT/.9,0,1)})`;
     ctx.fillText('FIGHT!',W/2,H/2);
   }
+  drawJoys(ctx,g);   // touch sticks and the how-to-steer hint (touch.js)
   if(!g.over&&g.countdown<=0&&g.idleT>STALEMATE_T-2){   // warn before the stalemate penalty lands
     ctx.font='800 18px ui-sans-serif,system-ui'; ctx.fillStyle='rgba(255,154,90,.95)';
-    ctx.fillText('NO DAMAGE  -  STALEMATE IN '+Math.max(1,Math.ceil(STALEMATE_T-g.idleT)),W/2,top-10);
+    ctx.fillText('NO DAMAGE  -  STALEMATE IN '+Math.max(1,Math.ceil(STALEMATE_T-g.idleT)),W/2,Math.max(18,top-10));
   }
   ctx.textBaseline='alphabetic';
 }
@@ -1790,23 +1795,23 @@ function renderGame(){
 function hudHTML(i,f){
   const right=i===1;
   const side=right?'right-0':'left-0';
-  const hint=f.ctrl==='cpu'?'CPU':(i===0?'WASD':'ARROWS');
+  const hint=f.ctrl==='cpu'?'CPU':(TOUCH?'TOUCH':(i===0?'WASD':'ARROWS'));
   return `
     <div class="flex items-baseline justify-between ${right?'flex-row-reverse':''}">
-      <span class="font-extrabold tracking-wide text-lg" style="color:${f.c1}">${f.name}</span>
-      <span class="text-[11px] text-slate-400 tracking-widest">${hint}</span>
+      <span class="hud-name font-extrabold tracking-wide text-lg" style="color:${f.c1}">${f.name}</span>
+      <span class="hud-hint text-[11px] text-slate-400 tracking-widest">${hint}</span>
     </div>
     <div class="relative h-4 rounded bg-black/50 border border-white/10 overflow-hidden mt-1">
       <div id="lag${i}" class="absolute inset-y-0 ${side} bg-white/60"></div>
       <div id="hp${i}" class="absolute inset-y-0 ${side}" style="background:linear-gradient(${right?270:90}deg,${f.c1},${f.c2})"></div>
     </div>
-    <div class="flex justify-between text-[11px] mt-1 text-slate-300 ${right?'flex-row-reverse':''}">
+    <div class="hud-row flex justify-between gap-2 text-[11px] mt-1 text-slate-300 ${right?'flex-row-reverse':''}">
       <span id="hpt${i}"></span><span id="ml${i}" class="tracking-widest"></span>
     </div>
     <div class="h-1.5 rounded bg-black/50 mt-0.5 overflow-hidden relative">
       <div id="mt${i}" class="absolute inset-y-0 ${side}" style="background:${SPINNERS[f.id].meterBg||'linear-gradient(90deg,'+f.c1+','+f.c2+')'}"></div>
     </div>
-    <div id="pp${i}" class="flex gap-1 mt-1.5 ${right?'justify-end':''}"></div>`;
+    <div id="pp${i}" class="hud-pips flex flex-wrap gap-1 mt-1.5 ${right?'justify-end':''}"></div>`;
 }
 function updateHud(g){
   g.fighters.forEach((f,i)=>{
@@ -1884,7 +1889,9 @@ function startGame(){
   game.pw=createWorld(game);
   makeProxy(game,f0); makeProxy(game,f1);
   $('#hud0').innerHTML=hudHTML(0,f0); $('#hud1').innerHTML=hudHTML(1,f1);
+  joyClear();
   setScreen('game');
+  game.hudH=$('#game').getBoundingClientRect().height;
 }
 function showEnd(){
   const g=game; g.endShown=true;
@@ -1896,6 +1903,7 @@ function showEnd(){
 }
 function setPause(p){
   if(state!=='game'||!game||game.over&&game.endShown) return;
+  joyClear();
   game.paused=p; $('#pause').classList.toggle('hidden',!p);
 }
 
@@ -2011,19 +2019,19 @@ function cardHTML(i){
   const accent=i?'text-sky-300':'text-orange-300';
   const ring=activeSlot===i?(i?'border-sky-400/80 shadow-[0_0_24px_rgba(56,189,248,.25)]':'border-orange-400/80 shadow-[0_0_24px_rgba(251,146,60,.25)]'):'border-white/10';
   return `
-  <div data-act="slot" data-i="${i}" class="rounded-2xl border ${ring} bg-white/5 backdrop-blur p-4 cursor-pointer transition">
-    <div class="flex items-center justify-between mb-3">
-      <span class="text-xs tracking-[0.3em] font-bold ${accent}">PLAYER ${i+1} &middot; ${d.name.toUpperCase()}${activeSlot===i?' &middot; PICKING':''}</span>
+  <div data-act="slot" data-i="${i}" class="rounded-2xl border ${ring} bg-white/5 backdrop-blur p-3 md:p-4 cursor-pointer transition">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <span class="text-[10px] md:text-xs tracking-[0.2em] md:tracking-[0.3em] font-bold ${accent}">PLAYER ${i+1} &middot; ${d.name.toUpperCase()}${activeSlot===i?' &middot; PICKING':''}</span>
       <div class="flex rounded-lg overflow-hidden border border-white/10 text-xs font-bold">
         <button data-act="ctrl" data-i="${i}" data-v="human" class="px-3 py-1.5 ${s.ctrl==='human'?'bg-white text-black':'text-slate-300 hover:bg-white/10'}">HUMAN</button>
         <button data-act="ctrl" data-i="${i}" data-v="cpu" class="px-3 py-1.5 ${s.ctrl==='cpu'?'bg-white text-black':'text-slate-300 hover:bg-white/10'}">CPU</button>
       </div>
     </div>
     <div class="flex gap-4 items-center">
-      <canvas data-prev="${i}" width="200" height="200" class="w-36 h-36 shrink-0 rounded-xl bg-black/30"></canvas>
+      <canvas data-prev="${i}" width="200" height="200" class="w-24 h-24 md:w-36 md:h-36 shrink-0 rounded-xl bg-black/30"></canvas>
       <div class="flex-1 space-y-2">${statBars(d,i)}<div class="text-[11px] text-slate-400">HP ${d.hp}</div></div>
     </div>
-    <p class="text-sm text-slate-300/80 mt-3 min-h-[7.5rem]">${d.desc}</p>
+    <p class="text-xs md:text-sm text-slate-300/80 mt-3 md:min-h-[7.5rem]">${d.desc}</p>
     <div class="mt-3 flex items-center gap-2 text-xs text-slate-400">
       <span class="w-5 h-5 rounded-full border border-white/30" style="background:${s.c1}"></span>
       <span class="w-5 h-5 rounded-full border border-white/30" style="background:${s.c2}"></span>
@@ -2038,10 +2046,10 @@ function rosterHTML(){
     const badges=picks.map(i=>`<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${i?'bg-sky-400 text-black':'bg-orange-400 text-black'}">P${i+1}</span>`).join('');
     const ring=picks.length?(picks.includes(activeSlot)?'border-white/70 bg-white/15':'border-white/40 bg-white/10'):'border-white/10 bg-white/5 hover:bg-white/10';
     return `
-    <button data-act="pick" data-v="${d.id}" data-sfx="select" class="relative flex flex-col items-center rounded-2xl border ${ring} p-3 transition hover:scale-[1.03]">
+    <button data-act="pick" data-v="${d.id}" data-sfx="select" class="relative flex flex-col items-center rounded-2xl border ${ring} p-2 md:p-3 transition hover:scale-[1.03]">
       <span class="absolute top-2 right-2 flex gap-1">${badges}</span>
-      <canvas data-roster="${d.id}" width="120" height="120" class="w-24 h-24 rounded-xl bg-black/30"></canvas>
-      <div class="mt-2 font-extrabold">${d.name}</div>
+      <canvas data-roster="${d.id}" width="120" height="120" class="w-16 h-16 md:w-24 md:h-24 rounded-xl bg-black/30"></canvas>
+      <div class="mt-1 md:mt-2 text-sm md:text-base font-extrabold">${d.name}</div>
       <div class="text-[11px] text-slate-400 text-center">${d.sub}</div>
     </button>`;
   }).join('');

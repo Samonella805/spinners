@@ -36,6 +36,7 @@
      SFX.shatter(size)         KO explosion
      SFX.toggleMute() / setMuted(bool) / isMuted()
      SFX.silence()             zero the looping voices (pause, menus)
+     SFX.background(hidden)    page hidden: silence and suspend the audio context; visible again: resume it
    ===================================================================== */
 const SFX = (() => {
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -683,11 +684,16 @@ const SFX = (() => {
     if (master) master.gain.setTargetAtTime(masterLevel(), ctx.currentTime, 0.02);
     if (muted) silence();
   }
+  // the page went to the background (tab hidden, app switched): stop every sound at once, and bring it back on return
+  function background(hidden) {
+    if (!ctx) return;
+    if (hidden) { silence(); ctx.suspend(); } else ctx.resume();
+  }
   function setMuted(m) { muted = !!m; store.set(KEY_MUTE, muted ? '1' : '0'); applyMaster(); }
   function setVolume(v) { volume = clamp(v, 0, 1); store.set(KEY_VOL, String(volume)); applyMaster(); }
 
   return {
-    unlock, duck, click, clang, grind, wall, clatter, tink, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, stack, eat, acid, heartbeat, tick, sproing, pop, collapse, bellChime, gearGroan, timeWarp, silence, setMuted, setVolume,
+    unlock, duck, click, clang, grind, wall, clatter, tink, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, stack, eat, acid, heartbeat, tick, sproing, pop, collapse, bellChime, gearGroan, timeWarp, silence, background, setMuted, setVolume,
     toggleMute() { setMuted(!muted); },
     isMuted() { return muted; }
   };

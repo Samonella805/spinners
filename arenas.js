@@ -254,9 +254,9 @@ function arenaPickHTML(){
   return ARENA_LIST.map(a=>{
     const on=a.id===selArena;
     return `
-    <button data-act="arena" data-v="${a.id}" data-sfx="select" class="flex flex-col items-center rounded-2xl border ${on?'border-orange-300/80 bg-white/15 shadow-[0_0_24px_rgba(251,146,60,.25)]':'border-white/10 bg-white/5 hover:bg-white/10'} p-3 transition hover:scale-[1.03]">
-      <canvas data-arena="${a.id}" width="224" height="224" class="w-28 h-28 rounded-xl bg-black/30"></canvas>
-      <div class="mt-2 font-extrabold">${a.name}</div>
+    <button data-act="arena" data-v="${a.id}" data-sfx="select" class="flex flex-col items-center rounded-2xl border ${on?'border-orange-300/80 bg-white/15 shadow-[0_0_24px_rgba(251,146,60,.25)]':'border-white/10 bg-white/5 hover:bg-white/10'} p-2 md:p-3 transition hover:scale-[1.03]">
+      <canvas data-arena="${a.id}" width="224" height="224" class="w-20 h-20 md:w-28 md:h-28 rounded-xl bg-black/30"></canvas>
+      <div class="mt-1 md:mt-2 text-sm md:text-base font-extrabold text-center leading-tight">${a.name}</div>
       <div class="text-[11px] text-slate-400 text-center">${a.sub}</div>
     </button>`;
   }).join('');
