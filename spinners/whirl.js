@@ -15,12 +15,11 @@ function drawWhirl(c,r,c1,c2,parts){
   for(let i=0;i<3;i++){
     c.save(); c.rotate(i*TAU/3);
     if(!parts||parts[i].alive){
+      const p=parts&&parts[i]; partPose(c,r,p);
       c.shadowColor=c2; c.shadowBlur=14; bladePath(c,r); c.fillStyle=c2; c.fill();
       c.shadowBlur=0; c.lineWidth=r*.045; c.lineJoin='round'; c.strokeStyle='#0d0e14'; c.stroke();
-    } else {
-      c.fillStyle='#14151c'; c.beginPath();
-      c.moveTo(r*.25,-r*.1); c.lineTo(r*.5,-r*.2); c.lineTo(r*.42,r*.15); c.lineTo(r*.25,r*.2); c.closePath(); c.fill();
-    }
+      partWear(c,r,p,cc=>bladePath(cc,r));
+    } else drawSocket(c,r,parts[i],{r0:.55,r1:.84,w:.14,cy:-.2,kind:'spar',glow:c2});   // the snapped root pokes out past the hub
     c.restore();
   }
   const g=c.createRadialGradient(-r*.15,-r*.15,r*.05,0,0,r*.65);
@@ -55,13 +54,23 @@ function drawAura(c,w,t){
 
 defineSpinner({
   def:{
-    id:'whirl', name:'Whirl', r:29, m:1.2, hp:110, parts:3, kind:'blade', prev:2.3,
+    id:'whirl', mat:'alloy', name:'Whirl', r:29, m:1.2, hp:110, parts:3, partY:-.2, kind:'blade', prev:2.3,
     sub:'Light &middot; gravity field',
     desc:'Quick and slippery. Her gravity field drags rivals in and burns them, and the closer they are the more it hurts. Touching her does nothing. Lose her blades and the field shrinks and weakens.',
     stats:{Speed:92, Power:65, Health:40}
   },
   sig:{main:['#7c4dff','#2ef2d0'], rival:['#ff3d8b','#ffe0ef']},
   draw(c,r,c1,c2,o){ drawWhirl(c,r,c1,c2,o.parts); },
+  // a gyro rotor with three weights inside a stator ring, and a field coil that flickers once the machine is heavily damaged
+  internals(c,r,o){
+    const t=o.t||0, ga=o.ga||0, fl=o.tier>=3?(Math.sin(t*40+Math.sin(t*7)*3)>.1?1:.2):1, pu=(.6+.4*Math.sin(t*5))*fl;
+    c.strokeStyle='#4b5160'; c.lineWidth=r*.06; c.beginPath(); c.arc(0,0,r*.5,0,TAU); c.stroke();
+    c.save(); c.rotate(ga*1.5); c.fillStyle='#8892a6';
+    for(let i=0;i<3;i++){c.rotate(TAU/3); c.fillRect(r*.05,-r*.02,r*.28,r*.04); c.beginPath(); c.arc(r*.34,0,r*.09,0,TAU); c.fill();}
+    c.restore();
+    c.lineWidth=Math.max(1,r*.03);
+    for(let j=0;j<3;j++){c.strokeStyle=rgba(o.c2||'#2ef2d0',(.55-j*.12)*pu); c.beginPath(); c.arc(0,0,r*(.62+j*.09),ga*-.6+j,ga*-.6+j+2.2); c.stroke();}
+  },
   partPts:r=>bladePts(r),
   piece:{
     draw:(c,d)=>{bladePath(c,d.r); c.fillStyle=d.c2; c.fill(); c.lineWidth=d.r*.045; c.lineJoin='round'; c.strokeStyle='#0d0e14'; c.stroke();},
@@ -80,6 +89,14 @@ defineSpinner({
     auraR(){return AURA*(.62+.38*this.aliveFrac());}
     fieldPow(){return .45+.55*this.aliveFrac();}
     reach(){return this.auraR();}
+    // victory (visual only): her field pulses, a ring collapsing into her and another flaring out
+    victory(g,dt,u){
+      this.vicT=(this.vicT||0)-dt;
+      if(this.vicT>0) return;
+      this.vicT=.75;
+      addRing(g,this.x,this.y,this.auraR()*1.1,this.r,.55,this.c2,3);
+      addRing(g,this.x,this.y,this.r,this.auraR()*1.3,.7,this.c1,4);
+    }
     maxSpeed(){return 330;}
     accel(){return 1000;}
     dragK(){return 1.1;}
@@ -94,10 +111,18 @@ defineSpinner({
         g.parts.push({k:'dot',x:this.x+Math.cos(a)*this.r,y:this.y+Math.sin(a)*this.r,vx:Math.cos(a+1.6)*60,vy:Math.sin(a+1.6)*60,life:.45,max:.45,col:this.c2,size:rand(1.5,2.5)});
       }
     }
+    // visual only: the field generator misfires: the aura flickers (drawing only, the pull is untouched) and a blade throws sparks
+    malfunction(g,dt,tier){
+      this.auFl=Math.sin(this.t*43+Math.sin(this.t*9)*4)>(tier>=4?0:-.4)?1:.3;
+      this.whT=(this.whT||0)-dt; if(this.whT>0) return;
+      this.whT=rand(.4,1)/(tier-2);
+      const a=rand(0,TAU);
+      for(let i=0;i<4;i++){const d=a+rand(-.6,.6), s=rand(80,220); addSpark(g,this.x+Math.cos(a)*this.r,this.y+Math.sin(a)*this.r,Math.cos(d)*s,Math.sin(d)*s,rand(.15,.3),this.c2,rand(1,1.8));}
+    }
     pileSource(){return [this.x,this.y,this.auraR()*DEBRIS_REACH];}   // settled scrap inside her field wakes up
     drawUnder(c,g,t){
       const w=this;
-      drawAura(c,w,t);
+      c.save(); c.globalAlpha=w.auFl==null?1:w.auFl; drawAura(c,w,t); c.restore();   // the field gutters once she is failing (malfunction)
       const A=w.auraR();
       for(const v of g.fighters){   // beams to rivals inside the field
         if(v===w||!v.alive) continue;
@@ -172,12 +197,13 @@ defineSpinner({
     if(this.orbitT<=0){this.orbit=Math.abs(vt)>60?Math.sign(vt):-this.orbit; this.orbitT=rand(2,4);}
     const [lx,ly]=this.lead(o,.3); let ux=lx-this.x, uy=ly-this.y; const ud=Math.hypot(ux,uy)||1; ux/=ud; uy/=ud;
     const closing=Math.max(0,-(o.vx*o.ts*dx+o.vy*o.ts*dy));
-    const threat=clamp(closing/450+(o.charges()&&d<touch+130?o.rage*.6:0),0,1);
-    const rr=Math.min(Math.max(touch+34,A*.62)*(1+.35*threat),A*.95);
+    const threat=clamp(closing/450+(o.charges()&&d<touch+130?o.danger()*.6:0),0,1);
+    const slow=clamp(1-Math.hypot(o.vx*o.ts,o.vy*o.ts)/220,0,1);   // a slow or pinned rival can be held in the burn from closer in
+    const rr=Math.min(Math.max(touch+34,A*.62)*(1+.35*threat)*(1-.12*slow*(1-threat)),A*.95);
     const rad=clamp((rr-ud)/50,-1,1);
     let wx=-ux*rad+(-uy)*this.orbit*.9, wy=-uy*rad+ux*this.orbit*.9;
     wx+=-uy*this.orbit*threat*.8; wy+=ux*this.orbit*threat*.8;   // sidestep a charge
-    if(o.charges() && d<rr*1.15){const th=.4+o.rage*1.2; wx-=dx*th; wy-=dy*th;}
+    if(o.charges() && d<rr*1.15){const th=.4+o.danger()*1.2; wx-=dx*th; wy-=dy*th;}
     const dc=Math.hypot(this.x,this.y);
     if(dc>R*.72){const k=(dc-R*.72)/(R*.28)*2; wx-=this.x/dc*k; wy-=this.y/dc*k;}
     const l=Math.hypot(wx,wy)||1; return [wx/l,wy/l];

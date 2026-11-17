@@ -29,6 +29,7 @@ const SK_SHOCK_KB = 560;    // px/s shove a rival at point-blank range takes fro
 const SK_MIN_RING = 3;     // it will not go on the attack with fewer pieces than this while scrap can still be had
 const SK_PATIENCE = 7;      // seconds of hunting after which it fights with whatever (at least 1 piece) it holds
 /* ---- Scrap-King: rusted steel core, hazard-striped magnetic plates, amber induction coil ---- */
+const SK_JUNK_MAX = 12;    // most welded-on scrap pieces drawn on the hull (visual only)
 const SK_N=8, SK_W=TAU/SK_N/2*.86;
 function platePts(r){return polar([[-SK_W,.78],[-SK_W*.82,1],[SK_W*.82,1],[SK_W,.78]],r);}
 function drawPlate(c,r,i,c1,c2){
@@ -56,11 +57,8 @@ function drawScrap(c,r,c1,c2,parts,k){
   c.fillStyle='#2a2019'; c.beginPath(); c.arc(0,0,r*.86,0,TAU); c.fill();
   for(let i=0;i<SK_N;i++){
     c.save(); c.rotate(i/SK_N*TAU);
-    if(!parts||parts[i].alive) drawPlate(c,r,i,c1,c2);
-    else{   // empty socket where a stabilizer plate was torn off
-      c.fillStyle='#120c08'; c.beginPath();
-      c.moveTo(r*.8,-r*.22); c.lineTo(r*.92,-r*.14); c.lineTo(r*.92,r*.14); c.lineTo(r*.8,r*.22); c.closePath(); c.fill();
-    }
+    if(!parts||parts[i].alive){const p=parts&&parts[i]; partPose(c,r,p); drawPlate(c,r,i,c1,c2); partWear(c,r,p,platePts(r));}
+    else drawSocket(c,r,parts[i],{r0:.7,r1:.95,w:.22,kind:'coil'});   // empty socket where a stabilizer plate was torn off
     c.restore();
   }
   const g=c.createRadialGradient(-r*.2,-r*.2,r*.05,0,0,r*.74);   // rusted steel core
@@ -73,6 +71,12 @@ function drawScrap(c,r,c1,c2,parts,k){
   for(let j=0;j<3;j++){   // copper induction windings
     c.strokeStyle=j%2?'#7a3d1c':'#d98b4a'; c.lineWidth=r*.055;
     c.beginPath(); c.arc(0,0,r*(.5-j*.09),0,TAU); c.stroke();
+  }
+  if(k.junk) for(const j of k.junk){   // salvaged scrap welded onto the hull: the more he has gathered, the more cluttered he looks
+    c.save(); c.rotate(j.a); c.translate(r*j.rho,0); c.rotate(j.rot);
+    polyPath(c,j.pts); c.fillStyle=j.col; c.fill(); c.lineWidth=r*.025; c.lineJoin='round'; c.strokeStyle='#0d0a07'; c.stroke();
+    c.fillStyle='#ffb21a'; c.beginPath(); c.arc(j.pts[0][0]*.5,j.pts[0][1]*.5,r*.02,0,TAU); c.fill();   // weld spot
+    c.restore();
   }
   c.save(); c.shadowColor=c2; c.shadowBlur=8+24*glow;
   const g2=c.createRadialGradient(0,0,0,0,0,r*.21);
@@ -104,6 +108,13 @@ function skCapture(g,k,b){
   b.sleepThreshold=Infinity; if(b.isSleeping) Sleeping.set(b,false);   // a sleeping body would ignore the orbit drive
   b.collisionFilter.group=0; b.collisionFilter.mask=CAT.WALL;          // ring pieces only touch the wall; contact with rivals is handled in ringContact()
   k.sk.ring.push(b); k.sk.pulse=Math.max(k.sk.pulse,.35);
+  // visual clutter: a scaled copy of the salvaged piece's outline gets welded onto the hull, in its own colour (draw-only, never read by the ability)
+  const sp=d.shape&&d.shape.pts;
+  if(sp&&sp.length>=3){
+    const m=sp.reduce((mx,p)=>Math.max(mx,Math.hypot(p[0],p[1])),1), s=Math.min(1,k.r*.17/m);
+    k.sk.junk.push({a:rand(0,TAU),rho:rand(.46,.64),rot:rand(0,TAU),pts:sp.map(p=>[p[0]*s,p[1]*s]),col:(PIECE[d.kind]?PIECE[d.kind].col(d):d.col)||'#8a6a4a'});
+    if(k.sk.junk.length>SK_JUNK_MAX) k.sk.junk.shift();
+  }
   SFX.salvage();
   for(let i=0;i<4;i++) addSpark(g,b.position.x,b.position.y,rand(-160,160),rand(-160,160),rand(.12,.3),Math.random()<.5?'#ffb21a':'#fff3c4',rand(1,2));
 }
@@ -312,20 +323,56 @@ function skCheck(g){
 
 defineSpinner({
   def:{
-    id:'scrapking', name:'Scrap-King', r:40, m:4, hp:165, parts:8, kind:'plate', prev:1.8,
+    id:'scrapking', mat:'junk', name:'Scrap-King', r:40, m:4, hp:165, parts:8, kind:'plate', prev:1.8,
     sub:'Heavy &middot; magnetic scrap shield',
     desc:'Heavy and opportunistic. Pulls shattered scrap from the arena floor into a jagged orbiting shield, then blasts it outward in a lethal storm. Break their magnetic plates to shrink their swarm.',
     stats:{Speed:40, Power:78, Health:80}
   },
   sig:{main:['#b4592a','#ffb21a'], rival:['#6f8398','#35d6e8']},
-  draw(c,r,c1,c2,o){ drawScrap(c,r,c1,c2,o.parts,{n:o.sk&&o.sk.n,cap:o.sk&&o.sk.cap,pulse:o.sk&&o.sk.pulse,t:o.t||0}); },
+  draw(c,r,c1,c2,o){ drawScrap(c,r,c1,c2,o.parts,{n:o.sk&&o.sk.n,cap:o.sk&&o.sk.cap,pulse:o.sk&&o.sk.pulse,junk:o.sk&&o.sk.junk,t:o.t||0}); },
+  // the magnet: a horseshoe wound with copper that turns slowly; the coil flickers when the machine is heavily damaged
+  internals(c,r,o){
+    const t=o.t||0, ga=o.ga||0, fl=o.tier>=3&&Math.sin(t*35+t*t)>.4?.3:1;
+    c.save(); c.rotate(ga*.4); c.globalAlpha=fl; c.lineCap='butt'; c.lineWidth=r*.14;
+    c.strokeStyle='#b23a3a'; c.beginPath(); c.arc(0,0,r*.4,.25,Math.PI-.25); c.stroke();
+    c.strokeStyle='#3a5fb2'; c.beginPath(); c.arc(0,0,r*.4,Math.PI+.25,TAU-.25); c.stroke();
+    c.strokeStyle='#d98b4a'; c.lineWidth=Math.max(1,r*.025);                          // copper windings across both limbs
+    c.beginPath(); for(let i=0;i<14;i++){const a=.3+i*.2; if(a>Math.PI-.3) break; for(const s of [0,Math.PI]){c.moveTo(Math.cos(a+s)*r*.32,Math.sin(a+s)*r*.32); c.lineTo(Math.cos(a+s+.05)*r*.48,Math.sin(a+s+.05)*r*.48);}} c.stroke();
+    c.fillStyle='#c0c6d2'; for(const a of [.25,Math.PI-.25,Math.PI+.25,TAU-.25]){c.beginPath(); c.arc(Math.cos(a)*r*.4,Math.sin(a)*r*.4,r*.08,0,TAU); c.fill();}   // pole tips
+    c.restore();
+  },
   partPts:r=>platePts(r),
   piece:{draw:(c,d)=>drawPlate(c,d.r,d.idx||0,d.c1,d.c2), col:()=>'#c98a1c'},
   preview:{spin:9},
   bg:{pos:t=>{const m=t*.33; return [Math.cos(m+1)*R*.5,Math.sin(m*1.2+4)*R*.45];}, spin:9},
   methods:class{
     init(){
-      this.sk={ring:[],ang:rand(0,TAU),blastT:rand(3.5,5),magT:0,fallT:.8,fallN:0,arcT:.3,planT:0,tgt:null,slam:false,pulse:0,pulling:false,huntT:0,burstCd:0};
+      this.sk={ring:[],ang:rand(0,TAU),blastT:rand(3.5,5),magT:0,fallT:.8,fallN:0,arcT:.3,planT:0,tgt:null,slam:false,pulse:0,pulling:false,huntT:0,burstCd:0,junk:[],malT:rand(.3,.8)};
+    }
+    // visual only: with the machine failing, electricity jumps between the ring pieces (the ring's orbit itself is physical and untouched)
+    malfunction(g,dt,tier){
+      const sk=this.sk; sk.malT-=dt; if(sk.malT>0) return;
+      sk.malT=rand(.25,.7)/(tier-2);
+      const rg=sk.ring; if(!rg.length) return;
+      const i=(Math.random()*rg.length)|0, A=rg[i].position;
+      let bx=rand(-.2,.2)*this.r, by=rand(-.2,.2)*this.r;   // a lone piece arcs back to the hull
+      if(rg.length>1){const B=rg[(i+1+((Math.random()*(rg.length-1))|0))%rg.length].position; bx=B.x-this.x; by=B.y-this.y;}
+      const ax=A.x-this.x, ay=A.y-this.y, pts=[[ax,ay]], n=4;
+      for(let q=1;q<n;q++){const u=q/n, j=this.r*.16; pts.push([ax+(bx-ax)*u+rand(-j,j),ay+(by-ay)*u+rand(-j,j)]);}
+      pts.push([bx,by]);
+      g.parts.push({k:'arc',f:this,pts,life:.09,max:.09,col:Math.random()<.5?'#ffb21a':'#5ab0ff'});
+      addSpark(g,A.x,A.y,rand(-140,140),rand(-140,140),rand(.12,.28),'#ffd27a',rand(1,1.8));
+    }
+    // finale: the magnet fails with a pop and the welded clutter flies off the hull as cosmetic fragments (pw.cosm, never real scrap)
+    onBurst(g){
+      SFX.pop(panAt(this.x));
+      addRing(g,this.x,this.y,this.r*.4,this.r*1.8,.3,this.c2,4);
+      for(const j of this.sk.junk){
+        const a=this.angle+j.a, s=rand(160,420);
+        spawnCosm(g,j.pts,this.x+Math.cos(a)*this.r*j.rho,this.y+Math.sin(a)*this.r*j.rho,a+j.rot,Math.cos(a)*s+this.vx*.4,Math.sin(a)*s+this.vy*.4,rand(-22,22),j.col,.7);
+      }
+      this.sk.junk=[];
+      for(let i=0;i<14;i++){const a=rand(0,TAU), s=rand(100,380); addSpark(g,this.x,this.y,Math.cos(a)*s,Math.sin(a)*s,rand(.2,.5),Math.random()<.5?'#ffb21a':'#5ab0ff',rand(1,2.2));}
     }
     maxSpeed(){return 215*(1+BANK_BOOST*this.bankK);}
     accel(){return 720*(1+.25*this.bankK);}
@@ -344,7 +391,7 @@ defineSpinner({
     check(g){skCheck(g);}
     pileSource(){return this.sk.magT<=0&&this.sk.ring.length<this.skCap()?[this.x,this.y,SK_MAG]:null;}   // settled scrap in reach of the magnet wakes up
     drawUnder(c,g,t){drawField(c,this,t);}
-    drawState(){return {sk:{n:this.sk.ring.length,cap:this.skCap(),pulse:this.sk.pulse}};}
+    drawState(){return {sk:{n:this.sk.ring.length,cap:this.skCap(),pulse:this.sk.pulse,junk:this.sk.junk}};}
     hud(lab,bar){
       const n=this.sk.ring.length, cap=this.skCap();
       const hunting=n<Math.min(SK_MIN_RING,cap)&&this.sk.huntT>0;
@@ -353,7 +400,7 @@ defineSpinner({
     }
   // pick the densest-looking loose scrap (live free pieces and settled records) to reload from. Samples, so it stays cheap.
   scrapTarget(g){
-    const pw=g.pw, cand=[];
+    const pw=g.pw, cand=[], rv=g.fighters.find(f=>f!==this&&f.alive);
     const take=(list,isBody)=>{
       const m=list.length; if(!m) return;
       for(let i=0;i<22&&cand.length<44;i++){
@@ -366,7 +413,8 @@ defineSpinner({
     let best=null, bs=-1;
     for(const p of cand){
       let nb=0; for(const q of cand) if(Math.hypot(p.x-q.x,p.y-q.y)<120) nb++;
-      const sc=(1+nb)/(1+Math.hypot(p.x-this.x,p.y-this.y)/280);
+      let sc=(1+nb)/(1+Math.hypot(p.x-this.x,p.y-this.y)/280);
+      if(rv){const rd=rv.danger(), near=clamp(1-Math.hypot(p.x-rv.x,p.y-rv.y)/280,0,1); sc/=1+rd*near*2.5;}   // don't reload right beside a dangerous rival
       if(sc>bs){bs=sc; best=p;}
     }
     return best?[best.x,best.y]:null;
@@ -389,8 +437,7 @@ defineSpinner({
           const [tx,ty]=sk.tgt, td=Math.hypot(tx-this.x,ty-this.y), tc=Math.hypot(tx,ty), pa=Math.atan2(ty,tx);
           if(!this.bank&&this.bankCd<=0&&td>260&&tc>R*.6) this.bank={t:rand(.7,1.1),dir:angDiff(pa,th)>=0?1:-1};
           if(this.bank){const v=this.bankStep(dt,pa); if(v) return v;}
-          const l=td||1, wv=Math.sin(this.t*1.9)*.2;
-          const ux=(tx-this.x)/l, uy=(ty-this.y)/l;
+          const wv=Math.sin(this.t*1.9)*.2, [ux,uy]=this.steerTo(tx,ty,.5);
           return [ux-uy*wv,uy+ux*wv];
         }
         // nothing to pull yet: wait on the rim side it is already on, where the rim fallback will tear shards loose toward it
@@ -403,9 +450,16 @@ defineSpinner({
         this.bank={t:rand(.7,1.1),dir:angDiff(Math.atan2(o.y,o.x),th)>=0?1:-1};
       }
       if(this.bank){const v=this.bankStep(dt,Math.atan2(o.y,o.x)); if(v) return v;}
-      const [lx,ly]=this.lead(o,.35); let tx=lx-this.x, ty=ly-this.y; const l=Math.hypot(tx,ty)||1; tx/=l; ty/=l;
+      const [lx,ly]=this.lead(o,.35), [tx,ty]=this.steerTo(lx,ly,.4);
       const wv=Math.sin(this.t*1.3)*.2;
       return [tx-ty*wv,ty+tx*wv];
     }
+    // victory (visual only, the match is already decided): the magnet drags the wreckage in, and his own capture rings it as it arrives
+    victory(g,dt,u){
+      wreckTug(g,this,420,1500,8);
+      this.vicT=(this.vicT||0)-dt;
+      if(this.vicT<=0){this.vicT=.6; addRing(g,this.x,this.y,this.r*2.8,this.r,.5,'#ffb21a',3); this.sk.pulse=Math.max(this.sk.pulse,.5);}
+    }
+    danger(){const cap=this.skCap(); return cap?clamp(this.sk.ring.length/cap,0,1)*.8:0;}   // a loaded ring shields and blasts
   }
 });

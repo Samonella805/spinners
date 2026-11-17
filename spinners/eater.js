@@ -32,16 +32,14 @@ function drawJaw(c,r,c1,c2){
 }
 // o.hp (0..1) drives the furnace colour: hungry orange when hurt, toxic acid-green at full health. o.ea.chew flares it when it swallows scrap.
 function drawEater(c,r,c1,c2,o){
-  const hp=o.hp==null?1:o.hp, t=o.t||0, chew=(o.ea&&o.ea.chew)||0;
+  const hp=o.hp==null?1:o.hp, t=o.t||0, chew=(o.ea&&o.ea.chew)||0, dig=(o.ea&&o.ea.dig)||0, cl=Math.pow((o.ea&&o.ea.col)||0,2);   // cl: furnace collapse in the death spin
   let k=clamp((hp-.55)/.45,0,1); k=k*k*(3-2*k);
   const hot=mixHex('#ff6a10',EA_GREEN,k), lite=mixHex('#ffd27a','#eaffb8',k);
+  const gn=chew/.3, snap=gn>0?Math.abs(Math.sin(gn*Math.PI*3))*Math.min(1,gn*1.5):0;   // the jaws gnash as it swallows scrap
   for(let i=0;i<EA_N;i++){
     c.save(); c.rotate(i/EA_N*TAU);
-    if(!o.parts||o.parts[i].alive) drawJaw(c,r,c1,c2);
-    else{   // empty socket where a jaw-plate was torn off
-      c.fillStyle='#0b0d12'; c.beginPath();
-      c.moveTo(r*.66,-r*.2); c.lineTo(r*.8,-r*.12); c.lineTo(r*.8,r*.12); c.lineTo(r*.66,r*.2); c.closePath(); c.fill();
-    }
+    if(!o.parts||o.parts[i].alive){const p=o.parts&&o.parts[i]; c.translate(-r*.07*snap*(i%2?1:.55),0); partPose(c,r,p); drawJaw(c,r,c1,c2); partWear(c,r,p,jawPts(r));}
+    else drawSocket(c,r,o.parts[i],{r0:.62,r1:.9,w:.2,kind:'furnace',glow:k>.5?EA_GREEN:'#ff7a20'});   // the furnace light leaks through the breach
     c.restore();
   }
   const g=c.createRadialGradient(-r*.2,-r*.2,r*.05,0,0,r*.82);   // heavy cast-iron hull
@@ -50,16 +48,31 @@ function drawEater(c,r,c1,c2,o){
   c.lineWidth=r*.05; c.strokeStyle='#0b0d12'; c.stroke();
   c.fillStyle='#0b0d12';
   for(let j=0;j<12;j++){c.save(); c.rotate(j/12*TAU); c.fillRect(r*.5,-r*.022,r*.2,r*.044); c.restore();}   // vent slits
+  if(k>.4){   // at full health, acid-green veins creep across the hull from the furnace mouth
+    c.save(); c.lineCap='round'; c.lineJoin='round'; c.lineWidth=Math.max(1,r*.022);
+    for(let i=0;i<7;i++){
+      c.strokeStyle=rgba(EA_GREEN,(.25+.35*(.5+.5*Math.sin(t*3+i*1.7)))*clamp((k-.4)/.6,0,1)); c.beginPath();
+      const a0=i/7*TAU+hash01(i,1)*.4;
+      for(let s=0;s<4;s++){const a=a0+(hash01(i,2+s)-.5)*.3, rr=r*(.45+.11*s); s?c.lineTo(Math.cos(a)*rr,Math.sin(a)*rr):c.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);}
+      c.stroke();
+    }
+    c.restore();
+  }
   c.fillStyle='#07080b'; c.beginPath(); c.arc(0,0,r*.43,0,TAU); c.fill();                              // furnace mouth
   const flick=.5+.5*Math.sin(t*6.5)+.25*Math.sin(t*15);
   c.save(); c.shadowColor=hot; c.shadowBlur=10+16*clamp(flick*.5+chew*2,0,1.5);
   const g2=c.createRadialGradient(0,0,0,0,0,r*.34);
   g2.addColorStop(0,lite); g2.addColorStop(.55,hot); g2.addColorStop(1,shade('#ff6a10',-.7));
-  c.fillStyle=g2; c.beginPath(); c.arc(0,0,r*.34,0,TAU); c.fill(); c.restore();
+  c.fillStyle=g2; c.beginPath(); c.arc(0,0,r*.34*(1-.6*cl),0,TAU); c.fill(); c.restore();   // the glowing core shrinks as the furnace collapses
   c.save(); c.beginPath(); c.arc(0,0,r*.34,0,TAU); c.clip();   // furnace grate
   c.strokeStyle='rgba(8,6,4,.85)'; c.lineWidth=r*.045;
   for(let j=0;j<3;j++){c.save(); c.rotate(j*Math.PI/3+t*.6); c.beginPath(); c.moveTo(-r*.4,0); c.lineTo(r*.4,0); c.stroke(); c.restore();}
   c.restore();
+  if(dig>0){   // a swallowed piece is digested: a glow travels from the jaws in to the furnace core
+    c.save(); c.globalCompositeOperation='lighter'; c.strokeStyle=rgba(k>.5?EA_GREEN:'#ffb347',.7*dig); c.lineWidth=r*.07;
+    c.beginPath(); c.arc(0,0,r*(.32+.46*dig),0,TAU); c.stroke(); c.restore();
+  }
+  if(cl>0){c.fillStyle=`rgba(4,3,2,${.45*cl})`; c.beginPath(); c.arc(0,0,r*.8,0,TAU); c.fill();}   // the hull sags dark as it caves in
   if(chew>0){c.globalCompositeOperation='lighter'; c.fillStyle=`rgba(255,240,200,${Math.min(.6,chew*2)})`; c.beginPath(); c.arc(0,0,r*.36,0,TAU); c.fill(); c.globalCompositeOperation='source-over';}
 }
 
@@ -73,7 +86,7 @@ function eatPiece(g,f,d,x,y,pr){
   const own=d.owner===f.idx, jaw=.75+.25*f.aliveFrac();
   const amt=Math.min((own?EA_HEAL_OWN:EA_HEAL_RIVAL)*jaw,EA_HEAL_CAP-f.ea.healed);
   f.ea.healed+=heal(g,f,amt);
-  f.ea.chew=.3;
+  f.ea.chew=.3; f.ea.dig=1;
   for(let i=0;i<14;i++){const a=rand(0,TAU), s=rand(80,340); addSpark(g,x,y,Math.cos(a)*s,Math.sin(a)*s,rand(.15,.4),['#ffb347','#fff3c4',EA_GREEN][(Math.random()*3)|0],rand(1,2.4));}
   addRing(g,x,y,3,30,.25,'#ffb347',3);
   SFX.eat(pr);
@@ -97,7 +110,7 @@ function drainHit(g,o,b,d){
 }
 function eaterPhys(g,f,dt){
   const ea=f.ea, pw=g.pw;
-  ea.chew=Math.max(0,ea.chew-dt);
+  ea.chew=Math.max(0,ea.chew-dt); ea.dig=Math.max(0,ea.dig-dt/.9);
   const full=f.hp>=f.maxHp*EA_FULL, hungry=!full&&ea.healed<EA_HEAL_CAP;
   let inf=0;
   for(let i=pw.bodies.length-1;i>=0;i--){
@@ -136,28 +149,71 @@ function eaterPhys(g,f,dt){
 
 defineSpinner({
   def:{
-    id:'eater', name:'Eater', r:38, m:3.6, hp:150, parts:EA_N, kind:'jaw', prev:1.9,
+    id:'eater', mat:'furnace', name:'Eater', r:38, m:3.6, hp:150, parts:EA_N, kind:'jaw', prev:1.9,
     sub:'Heavy &middot; devours scrap',
     desc:'Ravenous and relentless. Devours shattered scrap from the arena floor to mend its hull&mdash;feasting even harder on rival parts. At full health, its touch infects loose debris with a corrosive drain that saps anyone else who collides with it. Shatter its jaw-plates to slow its feast.',
     stats:{Speed:40, Power:60, Health:75}
   },
   sig:{main:['#7a8c4a','#ff8a1f'], rival:['#8a5cff','#c8ff3a']},
   draw(c,r,c1,c2,o){ drawEater(c,r,c1,c2,o); },
+  // a furnace grate over churning embers: orange when hungry, acid green near full health (matching the core colour)
+  internals(c,r,o){
+    const hp=o.hp==null?1:o.hp, k=clamp((hp-.5)/.5,0,1), t=o.t||0, ga=o.ga||0, fl=.75+.25*Math.sin(t*7);
+    c.globalCompositeOperation='lighter';
+    for(const [col,al] of [['#ff8a3a',1-k],['#7dff4a',k]]){
+      if(al<.02) continue;
+      const g=c.createRadialGradient(0,0,0,0,0,r*.6); g.addColorStop(0,rgba(col,.7*al*fl)); g.addColorStop(1,rgba(col,0)); c.fillStyle=g; c.fillRect(-r,-r,r*2,r*2);
+    }
+    c.globalCompositeOperation='source-over';
+    for(let i=0;i<6;i++){const a=ga*.35+i*1.1, rr=r*(.12+.3*hash01(i,3)); c.fillStyle=`rgba(255,${k>.5?240:170},90,${.35+.35*Math.sin(t*6+i)})`; c.beginPath(); c.arc(Math.cos(a)*rr,Math.sin(a)*rr,r*.035,0,TAU); c.fill();}   // embers churn
+    c.save(); c.rotate(ga*.3); c.strokeStyle='#14100c'; c.lineWidth=r*.055; c.lineCap='butt';                       // the grate
+    c.beginPath(); for(let i=0;i<8;i++){const a=i/8*TAU; c.moveTo(Math.cos(a)*r*.1,Math.sin(a)*r*.1); c.lineTo(Math.cos(a)*r*.52,Math.sin(a)*r*.52);} c.stroke();
+    c.beginPath(); c.arc(0,0,r*.52,0,TAU); c.stroke(); c.restore();
+  },
   partPts:r=>jawPts(r),
   piece:{draw:(c,d)=>drawJaw(c,d.r,d.c1,d.c2), col:()=>'#7b8493'},
   preview:{spin:9},
   bg:{pos:t=>[Math.cos(t*.4+3)*R*.5,Math.sin(t*.5+1)*R*.5], spin:9},
   meterBg:'linear-gradient(90deg,#ff6a10,#7dff3a)',
   methods:class{
-    init(){this.ea={healed:0,chew:0,planT:0,tgt:null,inf:0};}
+    init(){this.ea={healed:0,chew:0,dig:0,planT:0,tgt:null,inf:0}; this.eaMalT=rand(.8,1.6); this.eaCol=false;}
+    // visual only: a failing furnace belches black smoke and spits cosmetic slag (pw.cosm: never edible, never infectable)
+    malfunction(g,dt,tier){
+      this.eaMalT-=dt; if(this.eaMalT>0) return;
+      this.eaMalT=rand(1.1,2.6)/(tier-2);
+      const a=rand(0,TAU), x=this.x+Math.cos(a)*this.r*.5, y=this.y+Math.sin(a)*this.r*.5;
+      for(let i=0;i<3;i++){const life=rand(.8,1.3); g.parts.push({k:'smoke',x:x+rand(-4,4),y:y+rand(-4,4),vx:Math.cos(a)*rand(20,60),vy:Math.sin(a)*rand(20,60)-20,life,max:life,size:this.r*rand(.2,.3),al:.55,col:'#0c0c0c'});}
+      spawnCosm(g,[[-3,-2.4],[3,-2],[2.4,3],[-2.6,2.2]],x,y,rand(0,TAU),Math.cos(a)*rand(90,220)+this.vx*.4,Math.sin(a)*rand(90,220)+this.vy*.4,rand(-20,20),'#ff7a20',1);
+      for(let i=0;i<5;i++) addSpark(g,x,y,Math.cos(a)*rand(60,200)+rand(-50,50),Math.sin(a)*rand(60,200)+rand(-50,50),rand(.15,.35),Math.random()<.5?'#ff9a3a':'#ffd27a',rand(1,2));
+      SFX.acid('infect');
+    }
+    // death: the furnace caves in (drawn by drawEater from ea.col), pulling embers inward with a falling groan
+    deathStep(g,dt,u){
+      if(u>.12&&!this.eaCol){this.eaCol=true; SFX.collapse(panAt(this.x));}
+      if(Math.random()<dt*40){
+        const a=rand(0,TAU), x=this.x+Math.cos(a)*this.r*.9, y=this.y+Math.sin(a)*this.r*.9, s=rand(90,200);
+        addSpark(g,x,y,-Math.cos(a)*s,-Math.sin(a)*s,rand(.2,.35),Math.random()<.5?'#ff9a3a':EA_GREEN,rand(1,2));
+      }
+    }
+    // finale: the furnace erupts in molten drops (cosmetic) that cool into stains on the floor
+    onBurst(g){
+      SFX.acid('drain');
+      for(let i=0;i<11;i++){
+        const a=rand(0,TAU), s=rand(200,520), z=rand(2.5,5);
+        spawnCosm(g,[[-z,-z*.7],[z,-z*.5],[z*.8,z],[-z*.7,z*.8]],this.x,this.y,rand(0,TAU),Math.cos(a)*s+this.vx*.4,Math.sin(a)*s+this.vy*.4,rand(-30,30),i%4?'#ff7a20':EA_GREEN,1);
+      }
+      for(let i=0;i<6;i++){const a=rand(0,TAU), d=rand(.3,1.7)*this.r; stain(g,this.x+Math.cos(a)*d,this.y+Math.sin(a)*d,rand(9,24),i%3?'#ff7a20':EA_GREEN,.28);}
+      for(let i=0;i<30;i++){const a=rand(0,TAU), s=rand(120,520); addSpark(g,this.x,this.y,Math.cos(a)*s,Math.sin(a)*s,rand(.25,.6),Math.random()<.6?'#ff9a3a':EA_GREEN,rand(1,2.6));}
+    }
     maxSpeed(){return 215;}
     accel(){return 700;}
     dragK(){return .85;}
     baseSpin(){return 13;}
     contactDamage(impact){return impact*.04*(.6+.4*this.aliveFrac());}   // lost jaw-plates weaken the bite
     reach(){return 50;}
+    flicks(){return false;}   // its jaws don't bat scrap around: eating stays exactly as it was
     physStep(g,dtIn){eaterPhys(g,this,dtIn*this.ts);}
-    drawState(){return {ea:{chew:this.ea.chew}};}
+    drawState(){return {ea:{chew:this.ea.chew,dig:this.ea.dig,col:this.dying?this.dyU:0}};}
     drawUnder(c,g,t){
       if(this.hp>=this.maxHp*EA_FULL){   // a faint toxic halo while it is at full health
         c.save(); c.translate(this.x,this.y); c.rotate(t*1.5); c.strokeStyle=rgba(EA_GREEN,.22+.1*Math.sin(t*5)); c.lineWidth=3; c.setLineDash([5,9]);
@@ -196,7 +252,8 @@ defineSpinner({
       for(const p of cand){
         if(full&&p.bat) continue;
         let nb=0; for(const q of cand) if(Math.hypot(p.x-q.x,p.y-q.y)<110) nb++;
-        const sc=(p.own?1:1.3)*(1+nb*.5)/(1+Math.hypot(p.x-this.x,p.y-this.y)/160);   // near scrap wins: every piece is worth the same 10 HP
+        let sc=(p.own?1:1.3)*(1+nb*.5)/(1+Math.hypot(p.x-this.x,p.y-this.y)/160);   // near scrap wins: every piece is worth the same 10 HP
+        const rd=o.danger(); if(rd>.3) sc/=1+rd*clamp(1-Math.hypot(p.x-o.x,p.y-o.y)/240,0,1)*2;   // scrap right beside a dangerous rival is a trap
         if(sc>bs){bs=sc; best=Object.assign({mode:'eat'},p);}
       }
       return best;
@@ -206,7 +263,7 @@ defineSpinner({
     aiMove(o,dx,dy,d,dt,g){
       const ea=this.ea, full=this.hp>=this.maxHp*EA_FULL;
       ea.planT-=dt; if(ea.planT<=0){ea.planT=.35; ea.tgt=this.scout(g,o,full);}
-      const seek=(tx,ty)=>{const l=Math.hypot(tx-this.x,ty-this.y)||1; return [(tx-this.x)/l,(ty-this.y)/l];};
+      const seek=(tx,ty)=>this.steerTo(tx,ty,.4);   // straight approach, no sideways drift
       const chase=()=>{const [lx,ly]=this.lead(o,.3); return seek(lx,ly);};
       const t=ea.tgt;
       if(!t) return chase();
@@ -222,5 +279,12 @@ defineSpinner({
       }
       return seek(t.x,t.y);
     }
+    // victory (visual only): the jaws gnash and the loser's wreckage is hauled toward the mouth, where his own eating logic swallows it
+    victory(g,dt,u){
+      wreckTug(g,this,360,1100,5);
+      this.vicT=(this.vicT||0)-dt;
+      if(this.vicT<=0){this.vicT=.5; this.ea.chew=.3; addRing(g,this.x,this.y,this.r*2.4,this.r,.4,EA_GREEN,3);}
+    }
+    danger(){return this.hp>=this.maxHp*EA_FULL?.35:0;}   // acid-charged: touching its infected scrap drains
   }
 });

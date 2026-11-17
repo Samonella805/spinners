@@ -64,11 +64,8 @@ function drawClock(c,r,c1,c2,parts,k){
   c.fillStyle='#24160a'; c.beginPath(); c.arc(0,0,r*.86,0,TAU); c.fill(); c.restore();
   for(let i=0;i<CW_N;i++){
     c.save(); c.rotate(i/CW_N*TAU);
-    if(!parts||parts[i].alive) drawCogTooth(c,r,i,c1,c2);
-    else {
-      c.fillStyle='#120a04'; c.beginPath();
-      c.moveTo(r*.82,-r*.17); c.lineTo(r*.9,-r*.06); c.lineTo(r*.87,r*.06); c.lineTo(r*.82,r*.17); c.closePath(); c.fill();
-    }
+    if(!parts||parts[i].alive){const p=parts&&parts[i]; partPose(c,r,p); drawCogTooth(c,r,i,c1,c2); partWear(c,r,p,cogToothPts(r));}
+    else drawSocket(c,r,parts[i],{r0:.7,r1:.93,w:.17,kind:'gear'});
     c.restore();
   }
   c.lineWidth=r*.05; c.strokeStyle=c2; c.beginPath(); c.arc(0,0,r*.82,0,TAU); c.stroke();
@@ -91,7 +88,9 @@ function drawClock(c,r,c1,c2,parts,k){
   const D=r*1.5; c.drawImage(dialImg(r,c1,c2),-D/2,-D/2,D,D);
   const cool=ph==='over'?'#7ff8ff':(ph==='burn'?'#7a5a38':'#fff3c4');
   c.strokeStyle='#1a0f05'; c.lineCap='round';
-  for(const [ang,len,w] of [[k.hr||0,.4,.06],[k.hand||0,.63,.04]]){
+  const gj=k.gl||0, jt=k.t||0;   // a failing movement: the hands shiver, and now and then skip to the wrong place
+  for(const [ang0,len,w] of [[k.hr||0,.4,.06],[k.hand||0,.63,.04]]){
+    const ang=ang0+(k.skip||0)*(len>.5?1:.6)+gj*Math.sin(jt*53+len*9)*.07;
     c.save(); c.rotate(ang);
     c.lineWidth=r*(w+.03); c.beginPath(); c.moveTo(0,r*.07); c.lineTo(0,-r*len); c.stroke();
     c.strokeStyle=cool; c.lineWidth=r*w; c.beginPath(); c.moveTo(0,r*.07); c.lineTo(0,-r*len); c.stroke();
@@ -127,13 +126,26 @@ function drawGhosts(c,f){
 
 defineSpinner({
   def:{
-    id:'clockwork', name:'Clockwork', r:36, m:2.6, hp:150, parts:12, kind:'cogtooth', prev:1.9,
+    id:'clockwork', mat:'brass', name:'Clockwork', r:36, m:2.6, hp:150, parts:12, kind:'cogtooth', prev:1.9,
     sub:'Precise &middot; escalating time-warp',
     desc:'Every tick builds pressure until time fractures around them, blurring the arena into slow motion, followed by a brief, fragile burnout. They wind faster with every cycle. Break their teeth to dull their blows, never their rhythm.',
     stats:{Speed:62, Power:60, Health:62}
   },
   sig:{main:['#d9a441','#c0642f'], rival:['#9fb3c8','#2ec4b6']},
-  draw(c,r,c1,c2,o){ drawClock(c,r,c1,c2,o.parts,{ang:o.angle,phase:o.clk&&o.clk.phase,hand:o.clk&&o.clk.hand,hr:o.clk&&o.clk.hr}); },
+  draw(c,r,c1,c2,o){ drawClock(c,r,c1,c2,o.parts,{ang:o.angle,phase:o.clk&&o.clk.phase,hand:o.clk&&o.clk.hand,hr:o.clk&&o.clk.hr,gl:o.gl,skip:o.skip,t:o.t}); },
+  // gear train (meshed wheels turn in opposite directions at their tooth ratio), an escapement wheel that advances one step per tick, and a mainspring
+  internals(c,r,o){
+    const ga=(o.ga||0)*.5, sl=o.slip||0, k=o.clk, esc=((k?k.tick:Math.floor(o.t||0))+(k?Math.min(1,k.t*8):1))*TAU/12;   // sl: a gear slipping a tooth (malfunction)
+    const gear=(x,y,n,r0,r1,a,col)=>{c.save(); c.translate(x*r,y*r); c.rotate(a); gearPath(c,n,r0*r,r1*r); c.fillStyle=col; c.fill();
+      c.fillStyle='#1c1208'; c.beginPath(); c.arc(0,0,r0*r*.3,0,TAU); c.fill(); c.restore();};
+    gear(0,0,14,.34,.42,ga+sl,'#8a6a2a');
+    gear(.46,.14,9,.17,.23,-(ga+sl)*14/9+.2,'#b98a34');
+    gear(-.34,-.4,8,.15,.2,ga*14/8+sl*2.2,'#a07a2c');   // the third wheel slips against the others
+    gear(-.42,.36,10,.15,.2,esc,'#d9c27a');                                // escapement: steps with the tick
+    c.strokeStyle='#d9c27a'; c.lineWidth=Math.max(1,r*.025); c.beginPath();   // mainspring, tightening as it turns
+    for(let i=0;i<=40;i++){const a=i/40*TAU*2.5+ga*.3, rr=r*(.06+.1*i/40); const x=.5*r+Math.cos(a)*rr, y=-.3*r+Math.sin(a)*rr; i?c.lineTo(x,y):c.moveTo(x,y);}
+    c.stroke();
+  },
   partPts:r=>cogToothPts(r),
   piece:{draw:(c,d)=>drawCogTooth(c,d.r,d.idx||0,d.c1,d.c2), col:d=>d.c1},
   preview:{spin:12, extra:t=>({clk:previewClk(t)})},
@@ -144,6 +156,38 @@ defineSpinner({
       this.ghosts=[];                  // Sandevistan afterimages
       this.cwDir=1; this.cwDirT=0;     // rim-orbit direction and its flip hysteresis
       this.cwSlam={back:0,cool:0};     // Overdrive slam loop: back = time left in the pull-back, cool = grace before the next pull-back
+      this.cwGl=0; this.cwSkip=0; this.cwSlip=0; this.cwSkT=rand(.5,1.2); this.cwDbl=0;   // draw-only malfunction state: hand shiver, hand skip, gear slip, timers
+    }
+    // visual only: a failing movement. The hands shiver and skip, a gear slips a tooth with a jerk, and the tick double-clicks.
+    malfunction(g,dt,tier){
+      this.cwGl=tier>=4?1:.55;
+      this.cwSkT-=dt;
+      if(this.cwSkT<=0){
+        this.cwSkT=rand(.7,1.7)/(tier-2);
+        this.cwSkip=rand(-1,1)*(tier>=4?.9:.5); this.cwSlip=rand(.5,1)*(Math.random()<.5?1:-1); this.cwDbl=.075;
+        SFX.tick(1+rand(0,.1),0);
+        const a=rand(0,TAU);
+        for(let i=0;i<4;i++) addSpark(g,this.x+Math.cos(a)*this.r*.5,this.y+Math.sin(a)*this.r*.5,rand(-120,120),rand(-120,120),rand(.12,.25),'#ffd98a',rand(1,1.6));
+      }
+      if(this.cwDbl>0){this.cwDbl-=dt; if(this.cwDbl<=0) SFX.tick(1.12,1);}   // the second click of the double-tick
+      const k=Math.exp(-7*dt); this.cwSkip*=k; this.cwSlip*=k;
+    }
+    // death: the hands flail and the gears slip wildly
+    deathStep(g,dt,u){
+      this.cwGl=1; this.cwSkip=Math.sin(this.t*19)*1.3+Math.sin(this.t*7.3)*.8; this.cwSlip=Math.sin(this.t*13)*.9;
+      if(Math.random()<dt*7) SFX.tick(1+rand(-.2,.3),Math.random()<.5?1:0);
+    }
+    // finale: the mainspring uncoils out of the body with a "sproing" and loose cogs roll away. All cosmetic fragments (pw.cosm), never debris.
+    onBurst(g){
+      SFX.sproing(panAt(this.x));
+      for(let i=0;i<5;i++){
+        const a=rand(0,TAU), s=rand(150,380), w=rand(9,17);
+        spawnCosm(g,[[-w,-1.3],[w,-1.3],[w,1.3],[-w,1.3]],this.x,this.y,rand(0,TAU),Math.cos(a)*s+this.vx*.4,Math.sin(a)*s+this.vy*.4,rand(-25,25),'#d9c27a',.5);
+      }
+      for(let i=0;i<7;i++){
+        const a=rand(0,TAU), s=rand(120,340), q=rand(5,9);
+        spawnCosm(g,polar(Array.from({length:8},(_,j)=>[j/8*TAU,j%2?.93:1]),q),this.x+Math.cos(a)*this.r*.4,this.y+Math.sin(a)*this.r*.4,rand(0,TAU),Math.cos(a)*s+this.vx*.4,Math.sin(a)*s+this.vy*.4,rand(-30,30),i%2?'#d9a441':'#8a6a2a',.4);
+      }
     }
     maxSpeed(){return 255*this.cwCfg().boost*this.cwMul(.55,true);}
     accel(){return 900*this.cwCfg().boost*this.cwMul(.5,true);}
@@ -156,7 +200,7 @@ defineSpinner({
     steerDur(){return this.clk.phase==='over'?STEER_T*.35:STEER_T;}   // in Overdrive it regains steering fast, so it can slam again at once
     tickReal(dt,g){this.clockStep(dt,g);}                         // the clock runs on real time, never dilated
     drawTrail(c){drawGhosts(c,this);}
-    drawState(){return {clk:this.clk};}
+    drawState(){return {clk:this.clk,gl:this.cwGl,skip:this.cwSkip,slip:this.cwSlip};}
     hud(lab,bar){
       const c=this.clk, cfg=this.cwCfg(), ph=c.phase;
       if(this._ph!==ph){   // recolour the meter only when the phase changes
@@ -279,9 +323,18 @@ defineSpinner({
           const al=Math.hypot(ax,ay)||1; return [ax/al,ay/al];
         }
       } else if(gap<6&&s.cool<=0) s.back=CW_BACK_MAX;   // touching: back off for the next run-up
-      const [lx,ly]=this.lead(o,.4), tx=lx-this.x, ty=ly-this.y, l=Math.hypot(tx,ty)||1;   // look further ahead: it is far faster than a slowed rival
-      return [tx/l,ty/l];
+      const [lx,ly]=this.lead(o,.4);   // look further ahead: it is far faster than a slowed rival
+      return this.steerTo(lx,ly,.5);   // and cancel sideways drift, so each pass comes in straight and at full closing speed
     }
+    // victory (visual only): the hands sweep to twelve and the bell rings, again when they arrive
+    victory(g,dt,u){
+      const c=this.clk, k=Math.min(1,dt*5);
+      c.phase='wind'; c.hv=0;
+      c.hand+=(Math.round(c.hand/TAU)*TAU-c.hand)*k; c.hr+=(Math.round(c.hr/TAU)*TAU-c.hr)*k;
+      if(!this.cwWon){this.cwWon=1; SFX.bellChime(); addRing(g,this.x,this.y,this.r,this.r*3.6,.7,'#ffd47a',4);}
+      else if(this.cwWon===1&&u>1.1){this.cwWon=2; SFX.bellChime(); addRing(g,this.x,this.y,this.r,this.r*4.4,.9,'#7ff8ff',5); for(let i=0;i<20;i++){const a=rand(0,TAU),s=rand(80,300); addSpark(g,this.x,this.y,Math.cos(a)*s,Math.sin(a)*s,rand(.3,.6),'#ffd47a',rand(1,2.2));}}
+    }
+    danger(){const c=this.clk; return c.phase==='over'?1:(c.phase==='wind'?.35*c.tick/Math.max(1,this.cwCfg().ticks):0);}
   // Clockwork's defensive AI: keep a safe gap from the rival (wider for Big Boy and a rival's gravity field),
   // back away harder when the rival is closing in, strafe toward the arena centre, and slide along the wall instead of
   // getting pinned. (dx,dy) is the unit vector to the rival, d the distance.
@@ -296,7 +349,7 @@ defineSpinner({
     }
     const safe=this.r+o.r+o.reach();   // how far the rival's reach extends past its body (gravity aura, rage, scrap ring)
     const closing=Math.max(0,-(o.vx*o.ts*dx+o.vy*o.ts*dy));
-    const threat=clamp((safe-d)/safe,0,1)+(d<safe*1.6?clamp(closing/600,0,.6):0);
+    const threat=clamp((safe-d)/safe,0,1)+(d<safe*1.6?clamp(closing/600,0,.6):0)+(d<safe*1.8?o.danger()*.25:0);
     let ax=-dx, ay=-dy;
     const wall=clamp((dc-R*.7)/(R*.25),0,1);
     if(wall>0){const ou=ax*nx+ay*ny; if(ou>0){ax-=nx*ou*wall; ay-=ny*ou*wall;}}   // last resort: slide along the wall

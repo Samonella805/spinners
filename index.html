@@ -20,7 +20,7 @@
   <div id="how" class="hidden mt-5 max-w-md text-left text-sm text-slate-300 bg-white/5 border border-white/10 rounded-xl p-4 backdrop-blur">
     <p><b class="text-orange-300">Player 1</b> steers with <kbd class="px-1.5 rounded bg-white/10">W A S D</kbd></p>
     <p><b class="text-sky-300">Player 2</b> steers with <kbd class="px-1.5 rounded bg-white/10">&#8592; &#8593; &#8595; &#8594;</kbd></p>
-    <p class="mt-2">Slam into your rival. Harder impacts do more damage. Hits chip parts off, and a spinner missing parts is weaker. Drain their health to shatter them. If nobody takes damage for 5 seconds, every spinner loses 5 HP. Either spinner can be set to CPU. Press <kbd class="px-1.5 rounded bg-white/10">P</kbd> to pause, <kbd class="px-1.5 rounded bg-white/10">M</kbd> to mute.</p>
+    <p class="mt-2">Slam into your rival. Harder impacts do more damage. Hits chip parts off, and a spinner missing parts is weaker. Drain their health to shatter them. If nobody takes damage for 5 seconds, every spinner loses 5 HP. Pick an arena: its gutters, obstacles and hazards affect both spinners the same way. Either spinner can be set to CPU. Press <kbd class="px-1.5 rounded bg-white/10">P</kbd> to pause, <kbd class="px-1.5 rounded bg-white/10">M</kbd> to mute.</p>
   </div>
 </section>
 
@@ -34,7 +34,10 @@
     </div>
     <div id="cards" class="grid md:grid-cols-2 gap-4"></div>
     <p class="text-center text-xs tracking-[0.3em] text-slate-400 mt-7 mb-3">ROSTER &middot; PICK A SPINNER FOR THE HIGHLIGHTED PLAYER</p>
-    <div id="roster" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"></div>
+    <div id="roster" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+    <p class="text-center text-xs tracking-[0.3em] text-slate-400 mt-7 mb-3">ARENA</p>
+    <div id="arenas" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3"></div>
+    <p id="arenaDesc" class="text-center text-sm text-slate-300/80 mt-3 max-w-2xl mx-auto min-h-[2.5rem]"></p>
     <div class="text-center mt-7 mb-4">
       <button id="btnFight" data-sfx="start" class="px-12 py-4 rounded-full bg-orange-500 hover:bg-orange-400 text-black font-extrabold text-lg tracking-[0.3em] shadow-[0_0_40px_rgba(251,146,60,.5)] transition hover:scale-105">FIGHT!</button>
     </div>
@@ -63,9 +66,10 @@
 </section>
 
 <!-- ============ END ============ -->
-<section id="end" class="hidden fixed inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
-  <p class="text-xs tracking-[0.5em] text-slate-300 mb-1">K.O.</p>
-  <h3 id="endTitle" class="text-5xl md:text-7xl font-black italic mb-6 text-center px-4"></h3>
+<section id="end" class="hidden fixed inset-0 flex flex-col items-center justify-end gap-2 pb-6 md:pb-10 pointer-events-none bg-gradient-to-t from-black/85 via-black/35 to-transparent">
+  <p class="text-xs tracking-[0.5em] text-slate-300">K.O.</p>
+  <h3 id="endTitle" class="text-4xl md:text-6xl font-black italic mb-1 text-center px-4"></h3>
+  <div id="endStats" class="grid grid-cols-[1fr_auto_1fr] gap-x-6 gap-y-0.5 text-center text-sm mb-3 min-w-[16rem]"></div>
   <div class="pointer-events-auto flex flex-col sm:flex-row gap-3">
     <button id="eAgain" data-sfx="start" class="px-8 py-3 rounded-full bg-orange-500 hover:bg-orange-400 text-black font-bold tracking-widest">REMATCH</button>
     <button id="eSelect" data-sfx="back" class="px-8 py-3 rounded-full bg-white/10 hover:bg-white/20 font-bold tracking-widest">CHANGE SPINNERS</button>
@@ -82,7 +86,10 @@
 <script src="spinners/clockwork.js"></script>
 <script src="spinners/scrapking.js"></script>
 <script src="spinners/eater.js"></script>
+<script src="spinners/monster.js"></script>
 <script src="audio.js"></script>
 <script src="game.js"></script>
+<!-- arenas register after game.js (they use its constants); add an arena by calling defineArena() in arenas.js -->
+<script src="arenas.js"></script>
 </body>
 </html>

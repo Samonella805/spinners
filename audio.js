@@ -6,10 +6,18 @@
      SFX.click(kind)           UI button sound: 'click' (default), 'select', 'back', 'start'
      SFX.duck(sec)             hit-stop muffle: spin hum down to ~15% and lowpassed for sec seconds, then released
      SFX.ricochet(speed,kick,delay)  extra-hard bounce, layered over clang (pitch-bent whang + crack)
-     SFX.clang(impact,m1,m2,damage)  spinner-vs-spinner hit. impact ~45..700 px/s, masses set the pitch,
-                               damage (HP taken, optional) layers a sub-bass punch above ~6 HP
+     SFX.clang(impact,m1,m2,damage,delay,mat1,mat2,pan)  spinner-vs-spinner hit. impact ~45..700 px/s, masses set the pitch,
+                               damage (HP taken, optional) layers a sub-bass punch above ~6 HP; mat1/mat2 are the spinners'
+                               material ids (iron, brass, junk, furnace, alloy, spring) so every pairing rings differently
+     SFX.grind(level,delay,pan)  glancing contact: short rasping scrape instead of a clang
+     SFX.wall(speed,pan,mat)   the arena rim taking a hard hit: low long ring plus a dull slap
+     SFX.clatter(size,speed,pan)  a plate landing after a hop on the floor
+     SFX.tink(speed,pan)       quiet tick of a cosmetic fragment bouncing
      SFX.heartbeat(urgency)    0..1, call every frame: Last Stand heartbeat + faint alarm (0 = off)
      SFX.tick(pitch,alt)       Clockwork escapement tick (alt=0) / tock (alt=1), pitch ~1..1.3 rises with the cycle
+     SFX.sproing(pan)          Clockwork's mainspring uncoiling from a dying body
+     SFX.pop(pan)              Scrap-King's magnet failing at death
+     SFX.collapse(pan)         Eater's furnace caving in during its death spin
      SFX.bellChime()           clock-tower gong plus sub drop: the final tick that starts Overdrive
      SFX.gearGroan(dur)        winding-down gear groan for burnout, dur in seconds
      SFX.timeWarp(on)          call every frame: muffles the mix while time is dilated
@@ -18,6 +26,7 @@
      SFX.polarity(n)           polarity blast: pneumatic thump, whoosh and metallic scatter, n = pieces fired
      SFX.spin(idx,id,speed01,pan,on,wear)  (wear 0..1 = dying-motor wobble) call every frame per spinner: a quiet looping spin voice with its own timbre per
                                spinner id; pitch follows speed01 (spin / base spin), pan -1..1, on=false silences it
+     SFX.stack(n)              Monster gaining Ricochet stack n (1..4): a short zing that climbs in pitch with n
      SFX.eat(size)             Eater swallowing a piece of scrap: heavy metallic crunch plus a downward gulp
      SFX.acid(kind)            'infect' or 'drain': sizzling acid hiss with bubbling; 'drain' adds a descending zap
      SFX.scrape(level)         0..1, call every frame: looping wall-grind
@@ -135,29 +144,93 @@ const SFX = (() => {
 
   // damage is the HP the hit took. Hits above ~6 HP add a deep sub-bass punch under the metallic ring.
   // delay (seconds) holds the whole sound back, so a hit-stop freeze can end before the clang lands.
-  function clang(impact, m1, m2, damage, delay) {
+  // Materials: what a spinner's armour is made of. pitch scales the ring, ring its decay, ratios are the partials (inharmonic = clangy),
+  // type the oscillator shape, hiss the strike noise, body the low thump. Unknown ids fall back to iron.
+  const MATS = {
+    iron:    { pitch: 0.8,  ring: 0.8,  ratios: [1, 2.76, 5.4, 8.93],  type: 'sine',     hiss: 0.8, body: 1.3 },   // Big Boy: dull low thud
+    brass:   { pitch: 1.05, ring: 1.5,  ratios: [1, 2.0, 3.01, 4.2],   type: 'sine',     hiss: 0.5, body: 0.8 },   // Clockwork: bell-like
+    junk:    { pitch: 0.95, ring: 0.6,  ratios: [1, 2.31, 4.1, 6.77],  type: 'square',   hiss: 1.4, body: 1.0 },   // Scrap-King: rattly
+    furnace: { pitch: 0.7,  ring: 0.7,  ratios: [1, 1.6, 3.3, 5.2],    type: 'triangle', hiss: 0.9, body: 1.5 },   // Eater: dull and heavy
+    alloy:   { pitch: 1.35, ring: 1.0,  ratios: [1, 2.76, 5.4, 8.93],  type: 'sine',     hiss: 1.2, body: 0.6 },   // Whirl: thin and bright
+    spring:  { pitch: 1.2,  ring: 1.3,  ratios: [1, 2.4, 4.8, 7.1],    type: 'triangle', hiss: 0.7, body: 0.7 }    // Monster: springy ping
+  };
+  const mat = id => MATS[id] || MATS.iron;
+  // pan = -1..1, or undefined for centre: returns the node a one-shot should connect to
+  function dest(pan) {
+    if (pan == null || !ctx.createStereoPanner) return bus;
+    const p = ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1) * 0.7; p.connect(bus); return p;
+  }
+
+  // damage is the HP the hit took. Hits above ~6 HP add a deep sub-bass punch under the metallic ring.
+  // delay (seconds) holds the whole sound back, so a hit-stop freeze can end before the clang lands.
+  // mat1/mat2: the two spinners' material ids, so every pairing sounds different. pan: screen position -1..1.
+  function clang(impact, m1, m2, damage, delay, mat1, mat2, pan) {
     if (!ready() || voices > MAX_VOICES || !limit('clang', 40)) return;
     const k = clamp((impact - 45) / 520, 0, 1);
     const sub = clamp(((damage || 0) - 6) / 16, 0, 1);
     const mass = ((m1 || 2) + (m2 || 2)) / 2;
-    const base = 640 / Math.sqrt(mass);               // heavier spinners ring lower
+    const A = mat(mat1), B = mat(mat2 || mat1), out = dest(pan);
+    const base = 640 / Math.sqrt(mass) * (A.pitch + B.pitch) / 2;      // heavier spinners ring lower, and the metals shift it
+    const ring = (A.ring + B.ring) / 2, hiss = (A.hiss + B.hiss) / 2, body = (A.body + B.body) / 2;
     const t = ctx.currentTime + (delay || 0), v = (0.22 + 0.5 * k) * (1 - 0.3 * sub);   // duck the ring a little while the sub plays
-    METAL.forEach((ratio, i) => {
-      const o = partial(base * ratio * rand(0.985, 1.015), t, (0.55 - i * 0.11) * (0.6 + k), v * [1, 0.6, 0.35, 0.2][i]);
+    for (let i = 0; i < 4; i++) {
+      const M = i % 2 ? B : A;                                          // the partials alternate between the two materials
+      const o = partial(base * M.ratios[i] * rand(0.985, 1.015), t, (0.55 - i * 0.11) * (0.6 + k) * ring, v * [1, 0.6, 0.35, 0.2][i], out, M.type);
       if (i === 0) track(o);
-    });
+    }
     if (sub > 0) {
       track(thump(t, 68, 28, 0.3, 0.95 * sub + 0.15, clip));
       thump(t, 135, 45, 0.12, 0.35 * sub, clip);                                       // short punch on top
     }
-    noise(t, 0.03 + 0.03 * k, 0.35 * k + 0.1, 'highpass', 2200, 0.7);                  // strike transient
+    noise(t, 0.03 + 0.03 * k, (0.35 * k + 0.1) * hiss, 'highpass', 2200, 0.7, out);    // strike transient
     if (k > 0.25) {                                                                    // body thump
       const o = ctx.createOscillator(), g = ctx.createGain();
       o.frequency.setValueAtTime(130 / Math.sqrt(mass) + 60, t);
       o.frequency.exponentialRampToValueAtTime(38, t + 0.14);
-      g.gain.setValueAtTime(0.55 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-      o.connect(g); g.connect(bus); o.start(t); o.stop(t + 0.18);
+      g.gain.setValueAtTime(0.55 * k * body, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.18);
     }
+  }
+
+  // Two rims slipping past each other without a solid hit: a short rasping scrape instead of a clang. level 0..1.
+  function grind(level, delay, pan) {
+    if (!ready() || voices > MAX_VOICES - 4 || !limit('grind', 110)) return;
+    const k = clamp(level, 0.1, 1), t = ctx.currentTime + (delay || 0), out = dest(pan);
+    const s = noise(t, 0.12 + 0.12 * k, 0.16 + 0.22 * k, 'bandpass', 1500 + 1600 * k, 2.4, out);   // rasp
+    track(s);
+    noise(t, 0.09, 0.1 * k, 'highpass', 4200, 0.8, out);                                           // shrill edge
+    partial(rand(310, 420) * (1 + k * 0.4), t, 0.1, 0.07 * k, out, 'sawtooth');                    // gritty buzz underneath
+  }
+
+  // The arena rim taking a hit: a low, long ring (steel wall) with a dull slap. speed = impact speed px/s, id = the spinner's material.
+  function wall(speed, pan, matId) {
+    if (!ready() || voices > MAX_VOICES - 3 || !limit('wall', 90)) return;
+    const k = clamp((speed - 120) / 700, 0, 1), M = mat(matId), t = ctx.currentTime, out = dest(pan);
+    const f = 92 * (0.9 + 0.2 * M.pitch);
+    [[1, 0.2], [1.58, 0.12], [2.9, 0.06]].forEach(([r, vol], i) => {
+      const o = partial(f * r * rand(0.99, 1.01), t, (0.35 + 0.5 * k) * (1 - i * 0.2), vol * (0.5 + 0.9 * k), out, 'sine');
+      if (i === 0) track(o);
+    });
+    thump(t, 150, 48, 0.16, 0.25 + 0.45 * k, clip);
+    noise(t, 0.04, 0.12 + 0.2 * k, 'bandpass', 1200, 1.1, out);
+  }
+
+  // a plate landing on the floor after a hop: noisy clatter plus a short ring. size ~6..30 px, speed px/s.
+  function clatter(size, speed, pan) {
+    if (!ready() || voices > MAX_VOICES - 6 || !limit('clatter', 45)) return;
+    const k = clamp(speed / 500, 0.15, 1), sz = clamp(size / 26, 0.3, 1.2), t = ctx.currentTime, out = dest(pan);
+    const f = rand(900, 1500) / Math.sqrt(sz);                                                     // big plates ring lower
+    track(partial(f, t, 0.09 + 0.18 * sz, 0.16 * k, out));
+    partial(f * 2.76, t, 0.06 + 0.06 * sz, 0.08 * k, out);
+    noise(t, 0.03 + 0.03 * sz, 0.2 * k, 'bandpass', 2600 / sz, 1.3, out);
+    if (sz > 0.6) thump(t, 140 / sz, 60, 0.07, 0.15 * k * sz, clip);                               // heavy plates thud
+  }
+
+  // quiet tick of a cosmetic fragment bouncing off the wall or a spinner
+  function tink(speed, pan) {
+    if (!ready() || voices > MAX_VOICES - 8 || !limit('tink', 55)) return;
+    const t = ctx.currentTime, v = clamp(speed / 600, 0.2, 0.6) * 0.09, f = rand(2600, 5200), out = dest(pan);
+    track(partial(f, t, rand(0.03, 0.07), v, out));
   }
 
   // Extra-hard Beyblade ricochet, layered over clang(): a sharp crack, a pitch-bent metallic "whang" that sweeps
@@ -199,11 +272,15 @@ const SFX = (() => {
     noise(t, 0.045, 0.3, 'bandpass', 3200, 1.2);
   }
 
-  function debris(speed) {
+  // size ~6..30 px (big pieces ring lower and longer), surface 'wall' | 'fighter' | 'piece', pan -1..1. All but speed are optional.
+  function debris(speed, size, surface, pan) {
     if (!ready() || voices > MAX_VOICES - 6 || !limit('debris', 30)) return;
-    const t = ctx.currentTime, v = clamp(speed / 700, 0.12, 0.55) * 0.3, f = rand(1400, 3800);
-    track(partial(f, t, rand(0.05, 0.13), v));
-    partial(f * 1.5, t, 0.05, v * 0.4);
+    const sz = clamp((size || 10) / 24, 0.3, 1.3), out = dest(pan);
+    const t = ctx.currentTime, v = clamp(speed / 700, 0.12, 0.55) * 0.3, f = rand(1400, 3800) / (0.6 + 0.6 * sz);
+    track(partial(f, t, rand(0.05, 0.13) * (0.7 + sz), v, out));
+    partial(f * 1.5, t, 0.05, v * 0.4, out);
+    if (surface === 'wall') thump(t, 120, 55, 0.08, v * 0.9, clip);                // skids off the steel rim with a dull knock
+    else if (surface === 'fighter') noise(t, 0.025, v * 0.8, 'highpass', 3000, 0.8, out);   // a bright slap off the armour
   }
 
   function shatter(size) {
@@ -231,6 +308,44 @@ const SFX = (() => {
     track(partial(f, t, 0.03, 0.26));                          // damped metallic ping
     partial(f * 2.1, t, 0.018, 0.1);
     partial((alt ? 300 : 410) * p, t, 0.05, 0.2);              // small wooden-case body
+  }
+
+  // Clockwork's mainspring uncoiling out of a dying body: a wobbling, falling sine "sproing" over a metallic ping and a rattle
+  function sproing(pan) {
+    if (!ready() || voices > MAX_VOICES - 2 || !limit('sproing', 400)) return;
+    const t = ctx.currentTime, out = dest(pan), dur = 0.65;
+    const o = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain(), g = ctx.createGain();
+    o.type = 'sine'; lfo.frequency.value = 24; lg.gain.value = 140;
+    lfo.connect(lg); lg.connect(o.frequency);
+    o.frequency.setValueAtTime(520, t); o.frequency.exponentialRampToValueAtTime(150, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(out || bus); o.start(t); lfo.start(t); o.stop(t + dur + 0.02); lfo.stop(t + dur + 0.02); track(o);
+    partial(2300, t, 0.25, 0.14, out);
+    noise(t, 0.12, 0.18, 'bandpass', 4200, 1.6, out);
+  }
+
+  // Scrap-King's magnet failing: a flat electrical pop, a short falling zap and a dull thud
+  function pop(pan) {
+    if (!ready() || voices > MAX_VOICES - 2 || !limit('pop', 300)) return;
+    const t = ctx.currentTime, out = dest(pan);
+    noise(t, 0.05, 0.5, 'bandpass', 1800, 0.9, out);
+    thump(t, 160, 45, 0.22, 0.6, clip);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.25);
+    g.gain.setValueAtTime(0.14, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    o.connect(g); g.connect(out || bus); o.start(t); o.stop(t + 0.3); track(o);
+  }
+
+  // Eater's furnace caving in: a long falling groan with a wet rattle, ending in a heavy gulp
+  function collapse(pan) {
+    if (!ready() || voices > MAX_VOICES - 2 || !limit('collapse', 600)) return;
+    const t = ctx.currentTime, out = dest(pan), dur = 0.7;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(34, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(out || bus); o.start(t); o.stop(t + dur + 0.02); track(o);
+    noise(t, dur * 0.8, 0.22, 'lowpass', 600, 0.8, out);
+    thump(t + dur * 0.85, 90, 30, 0.2, 0.5, clip);
   }
 
   // Clock-tower gong for the final tick: inharmonic bell partials (the low ones detuned in pairs so they beat),
@@ -473,6 +588,13 @@ const SFX = (() => {
       n.connect(bp); bp.connect(am); am.connect(mix);
       a.connect(lp); b.connect(lp); lp.connect(sg); sg.connect(mix);
       set = (s, t) => { const f = 70 + 90 * s; to(a.frequency, f, t); to(b.frequency, f * 1.013, t); to(bp.frequency, 500 + 900 * s, t); to(lfo.frequency, 18 + 30 * s, t); };
+    } else if (id === 'monster') {    // zippy: a detuned saw pair through a bright, opening lowpass, a rushing noise band and a fast tremolo
+      const a = osc('sawtooth', 180), b = osc('sawtooth', 183), lp = filt('lowpass', 900, 2), sg = gain(0.3);
+      const n = nz(), bp = filt('bandpass', 2400, 4), ng = gain(0.22);
+      const lfo = osc('sine', 14), depth = gain(0.18);
+      lfo.connect(depth); depth.connect(sg.gain);
+      a.connect(lp); b.connect(lp); lp.connect(sg); sg.connect(mix); n.connect(bp); bp.connect(ng); ng.connect(mix);
+      set = (s, t) => { const f = 130 + 260 * s; to(a.frequency, f, t); to(b.frequency, f * 1.015, t); to(lp.frequency, 700 + 2600 * s, t); to(bp.frequency, 1800 + 2600 * s, t); to(lfo.frequency, 9 + 22 * s, t); };
     } else {                          // eater (and any unknown spinner): a growling saw with a wobble plus churning noise
       const o = osc('sawtooth', 80), lp = filt('lowpass', 450, 3), vib = osc('sine', 6.5), vd = gain(4);
       const n = nz(), nl = filt('lowpass', 260), ng = gain(0.35);
@@ -487,22 +609,35 @@ const SFX = (() => {
   }
   // wear 0..1: how badly the spinner is hurt. The hum pulses in and out at an uneven rate (matching the visual wobble) and
   // its pitch wavers; near 1 (Last Stand) it sputters with short dropouts. Never louder than SPIN_GAIN.
-  function spin(idx, id, s, pan, on, wear) {
+  // stall (optional boolean): the game says the motor is sputtering right now. The hum drops out and sags in pitch for exactly that moment,
+  // replacing the random dropouts below, so what you hear matches what you see.
+  function spin(idx, id, s, pan, on, wear, stall) {
     if (!ctx || ctx.state !== 'running') return;
     let v = spins[idx];
     if (v && v.id !== id) { v.kill(); v = spins[idx] = null; }   // a different spinner now owns this slot
     if (!on) { if (v && v.level > 0) setLoop(v, 0, 1); return; }
     if (!v) v = spins[idx] = spinVoice(id);
-    s = clamp(s, 0, 1.2);
+    s = clamp(s, 0, 1.6);   // above 1 only while a spinner is wound up (Monster's Ricochet stacks)
     const w = clamp(wear || 0, 0, 1), t = ctx.currentTime;
     const wob = Math.sin(t * 23 + idx) * 0.6 + Math.sin(t * (7 + 5 * w) + idx * 2) * 0.4;   // -1..1, uneven
     if (v.dropUntil === undefined) v.dropUntil = 0;
-    if (w > 0.75 && t > v.dropUntil && Math.random() < 0.04 * (w - 0.7) * 3) v.dropUntil = t + rand(0.05, 0.16);
-    v.set(s * (1 + w * 0.06 * wob), t);
+    if (stall === undefined && w > 0.75 && t > v.dropUntil && Math.random() < 0.04 * (w - 0.7) * 3) v.dropUntil = t + rand(0.05, 0.16);
+    v.set(s * (1 + w * 0.06 * wob) * (stall ? 0.8 : 1), t);
     v.pan.pan.setTargetAtTime(clamp(pan || 0, -1, 1) * 0.6, t, 0.08);
     let lvl = clamp(0.35 + 0.65 * s, 0, 1) * (1 - w * 0.65 * (0.5 + 0.5 * wob));
-    if (t < v.dropUntil) lvl *= 0.08;
+    if (t < v.dropUntil || stall) lvl *= 0.08;
     setLoop(v, lvl, SPIN_GAIN, w > 0 ? 0.02 : 0.05);
+  }
+
+  // Monster banking off the wall: a short bright zing and a click. Pitch climbs with each stack n (1..4).
+  function stack(n) {
+    if (!ready() || voices > MAX_VOICES || !limit('stack', 60)) return;
+    const t = ctx.currentTime, k = clamp(n || 1, 1, 4), f = 520 * Math.pow(1.26, k - 1);   // about a major third per stack
+    partial(f, t, 0.16, 0.16, bus, 'triangle');
+    partial(f * 2.01, t, 0.1, 0.07, bus, 'sine');
+    partial(f * 3, t + 0.02, 0.07, 0.04 + 0.01 * k, bus, 'sine');
+    noise(t, 0.04, 0.1, 'bandpass', 2400 + 700 * k, 3);
+    if (k >= 4) partial(f * 1.5, t + 0.05, 0.22, 0.12, bus, 'triangle');   // a bright fifth on top: fully wound up
   }
 
   // Eater swallowing scrap: a heavy metallic crunch (noise body, shard snap, a few square clacks, a low thump) and a gulp
@@ -552,7 +687,7 @@ const SFX = (() => {
   function setVolume(v) { volume = clamp(v, 0, 1); store.set(KEY_VOL, String(volume)); applyMaster(); }
 
   return {
-    unlock, duck, click, clang, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, eat, acid, heartbeat, tick, bellChime, gearGroan, timeWarp, silence, setMuted, setVolume,
+    unlock, duck, click, clang, grind, wall, clatter, tink, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, stack, eat, acid, heartbeat, tick, sproing, pop, collapse, bellChime, gearGroan, timeWarp, silence, setMuted, setVolume,
     toggleMute() { setMuted(!muted); },
     isMuted() { return muted; }
   };
