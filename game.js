@@ -1782,6 +1782,7 @@ function renderGame(){
     ctx.fillText('FIGHT!',W/2,H/2);
   }
   drawJoys(ctx,g);   // touch sticks and the how-to-steer hint (touch.js)
+  drawKeyHint(ctx,g);   // keyboard version of that hint, plus the goal for a player's first few matches
   if(!g.over&&g.countdown<=0&&g.idleT>STALEMATE_T-2){   // warn before the stalemate penalty lands
     ctx.font='800 18px ui-sans-serif,system-ui'; ctx.fillStyle='rgba(255,154,90,.95)';
     ctx.fillText('NO DAMAGE  -  STALEMATE IN '+Math.max(1,Math.ceil(STALEMATE_T-g.idleT)),W/2,Math.max(18,top-10));
@@ -1904,6 +1905,8 @@ function showEnd(){
   if(g.winner){el.textContent=g.winner.name+' WINS'; el.style.color=g.winner.c1; el.style.textShadow=`0 0 40px ${g.winner.c1}`;}
   else {el.textContent='DOUBLE K.O.'; el.style.color='#e2e8f0'; el.style.textShadow='none';}
   $('#endStats').innerHTML=statsHTML(g);
+  if(!g.recorded){g.recorded=true; g.progLine=recordResult(g);}   // after a Second Wind the end screen keeps the first result
+  $('#eProg').innerHTML=g.progLine||''; $('#eProg').classList.toggle('hidden',!g.progLine);
   $('#end').querySelector('p').textContent='K.O.';
   $('#end').classList.remove('hidden');
 }
@@ -1919,6 +1922,7 @@ function setPause(p){
 function secondWind(){
   const g=game, f=g&&g.fighters.find(x=>x.ctrl==='human'); if(!f||f.alive||g.secondUsed) return;
   g.secondUsed=true;
+  if(g.recorded){g.recorded=false; prog.played=Math.max(0,prog.played-1);}   // the loss is undone: the real result is decided by the comeback
   g.dying=g.dying.filter(d=>d.f!==f); f.dying=false; f.dyU=0; f.alive=true;
   f.hp=f.hpLag=Math.round(f.maxHp*.5); f.lastStand=false; f.flash=1; f.stallT=0; f.launchT=0;
   const half=Math.ceil(f.parts.length/2); f.parts.forEach((p,i)=>{if(i<half){p.alive=true; p.dmg=Math.min(p.dmg,.3); p.tt=0;}});
@@ -2043,6 +2047,45 @@ function loadPicks(){
     if(DEFS[p.p0]) sel[0].fighter=p.p0; if(DEFS[p.p1]) sel[1].fighter=p.p1; cpuRandom=p.cpuRandom!==false;
     if(p.arena==='random'||(typeof ARENAS!=='undefined'&&ARENAS[p.arena])) selArena=p.arena;}catch{}
 }
+/* ---- PROGRESS: wins per spinner and which spinners you have beaten (vs the CPU). Saved in this browser only. ---- */
+const PROG_KEY='spin.progress';
+let prog={played:0,wins:{},beaten:{}};
+try{const p=JSON.parse(localStorage.getItem(PROG_KEY)); if(p) prog={played:p.played|0,wins:p.wins||{},beaten:p.beaten||{}};}catch{}
+const saveProg=()=>{try{localStorage.setItem(PROG_KEY,JSON.stringify(prog));}catch{}};
+const beatenCount=()=>Object.keys(DEFS).filter(id=>prog.beaten[id]).length;
+// called once per finished match; returns a line for the end screen (or '')
+function recordResult(g){
+  const humans=g.fighters.filter(f=>f.ctrl==='human'); if(!humans.length) return '';   // Watch mode counts for nothing
+  prog.played++;
+  let line='';
+  const me=humans.length===1?humans[0]:null, cpu=g.fighters.find(f=>f.ctrl==='cpu');
+  if(me&&cpu&&g.winner===me){
+    prog.wins[me.id]=(prog.wins[me.id]||0)+1;
+    const total=Object.keys(DEFS).length;
+    if(!prog.beaten[cpu.id]){prog.beaten[cpu.id]=true; const n=beatenCount();
+      line=n>=total?`&#127942; YOU BEAT ALL ${total} SPINNERS! CHAMPION!`:`NEW! YOU BEAT ${cpu.name.toUpperCase()} &middot; ${n}/${total} SPINNERS BEATEN`;}
+    else line=`${me.name.toUpperCase()} WINS: ${prog.wins[me.id]}`;
+  }
+  saveProg(); return line;
+}
+// before the first key press of a match on a keyboard device: how to steer. For the first matches ever, also the goal.
+function drawKeyHint(c,g){
+  if(!g||g.over||!g.fighters.some(f=>f.ctrl==='human')) return;
+  const y=H-Math.max(40,H*.08);
+  if(!TOUCH&&!g.keyed){
+    if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].some(k=>keys[k])) g.keyed=true;
+    else{
+      const a=.55+.35*Math.sin(g.time*4), two=g.fighters.every(f=>f.ctrl==='human');
+      c.textAlign='center'; c.textBaseline='middle'; c.font='800 16px ui-sans-serif,system-ui'; c.fillStyle=`rgba(255,255,255,${a})`;
+      c.fillText(two?'PLAYER 1: W A S D   \u00b7   PLAYER 2: ARROW KEYS':'STEER WITH W A S D',W/2,y);
+    }
+  }
+  if(prog.played<3&&g.mt<9){   // a new player's first matches: what the point is
+    const a=clamp(Math.min(g.mt+3,9-g.mt)/1.2,0,1)*.9;
+    c.textAlign='center'; c.textBaseline='middle'; c.font='800 15px ui-sans-serif,system-ui'; c.fillStyle=`rgba(255,200,140,${a})`;
+    if(W<560){c.fillText('HARD HITS KNOCK THEIR PLATES OFF',W/2,y-26); c.fillText('RAM YOUR RIVAL!',W/2,y-48);} else c.fillText('RAM YOUR RIVAL! HARD HITS KNOCK THEIR PLATES OFF',W/2,y-28);
+  }
+}
 function setMode(m){
   mode=m; sel[0].ctrl=m==='cpu'?'cpu':'human'; sel[1].ctrl=m==='2p'?'human':'cpu'; activeSlot=0;
   setScreen('select');
@@ -2074,6 +2117,7 @@ function rosterHTML(){
       <span class="absolute top-1.5 right-1.5 flex gap-1">${badges}</span>
       <canvas data-roster="${d.id}" width="120" height="120" class="w-14 h-14 md:w-20 md:h-20 rounded-xl bg-black/30"></canvas>
       <div class="mt-1 text-xs md:text-sm font-extrabold">${d.name}</div>
+      ${mode==='1p'?`<div class="h-3 md:h-4 text-[9px] md:text-[10px] font-bold tracking-wider text-emerald-300">${prog.beaten[d.id]?'&#10003; BEATEN':''}</div>`:''}
     </button>`;
   });
   if(mode==='1p'&&activeSlot===1) tiles.push(`
@@ -2090,6 +2134,8 @@ function renderCards(){
   const d=DEFS[sel[activeSlot].fighter];
   $('#selDesc').innerHTML=randomSlot(activeSlot)?'Every match, the CPU picks a different spinner.':d.desc;
   $('#roster').innerHTML=rosterHTML();
+  const tot=Object.keys(DEFS).length, nb=beatenCount();
+  $('#selProg').innerHTML=mode==='1p'?(nb>=tot?`&#127942; CHAMPION: YOU HAVE BEATEN ALL ${tot} SPINNERS`:`BEAT EVERY SPINNER: ${nb}/${tot}`):'';
   $('#arenas').innerHTML=arenaPickHTML()+`
     <button data-act="arena" data-v="random" data-sfx="select" class="flex flex-col items-center justify-center rounded-2xl border ${selArena==='random'?'border-orange-300/80 bg-white/15':'border-white/10 bg-white/5 hover:bg-white/10'} p-2 transition">
       <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl bg-black/30 flex items-center justify-center text-2xl font-black text-slate-300">?</div>
@@ -2166,7 +2212,13 @@ addEventListener('keydown',e=>{
 addEventListener('keyup',e=>{keys[e.code]=false;});
 addEventListener('blur',()=>{for(const k in keys) keys[k]=false; if(state==='game'&&game&&!game.over) setPause(true);});
 
-$('#btnPlay').onclick=()=>setMode('1p');
+// very first visit: PLAY drops straight into a match (Big Boy vs a random CPU, Classic arena); after that it opens the select screen
+$('#btnPlay').onclick=()=>{
+  let fresh=prog.played===0; try{if(localStorage.getItem(PICKS_KEY)!==null) fresh=false;}catch{}
+  if(!fresh){setMode('1p'); return;}
+  mode='1p'; sel[0].ctrl='human'; sel[1].ctrl='cpu'; activeSlot=0; sel[0].fighter='bigboy'; cpuRandom=true; selArena='classic';
+  savePicks(); beginMatch();
+};
 $('#btn2p').onclick=()=>setMode('2p');
 $('#btnWatch').onclick=()=>setMode('cpu');
 $('#btnHow').onclick=()=>$('#how').classList.toggle('hidden');

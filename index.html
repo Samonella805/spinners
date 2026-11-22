@@ -7,8 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Spin Arena</title>
-<link rel="stylesheet" href="style.css?v=9">
-<link rel="stylesheet" href="tw.css?v=9">   <!-- pre-built Tailwind (tailwind.config.js); after style.css, where the old CDN injected it, so ties resolve the same way -->
+<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="tw.css?v=10">   <!-- pre-built Tailwind (tailwind.config.js); after style.css, where the old CDN injected it, so ties resolve the same way -->
 </head>
 <body class="text-slate-100 select-none">
 <canvas id="cv" class="fixed inset-0"></canvas>
@@ -40,6 +40,7 @@
     </div>
     <div id="cards" class="grid grid-cols-[1fr_auto_1fr] items-center gap-2 md:gap-4 max-w-2xl mx-auto"></div>
     <p id="selDesc" class="text-center text-xs md:text-sm text-slate-300/90 mt-3 max-w-2xl mx-auto min-h-[3rem]"></p>
+    <p id="selProg" class="text-center text-[10px] md:text-xs font-bold tracking-[.25em] text-emerald-300/90 mt-1"></p>
     <div id="roster" class="grid grid-cols-4 xl:grid-cols-8 gap-2 md:gap-3 mt-3"></div>
     <p class="text-center text-xs tracking-[0.3em] text-slate-400 mt-6 mb-2">ARENA</p>
     <div id="arenas" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
@@ -76,6 +77,7 @@
   <p class="text-xs tracking-[0.5em] text-slate-300">K.O.</p>
   <h3 id="endTitle" class="text-4xl md:text-6xl font-black italic mb-1 text-center px-4"></h3>
   <div id="endStats" class="grid grid-cols-[1fr_auto_1fr] gap-x-6 gap-y-0.5 text-center text-sm mb-3 min-w-[16rem]"></div>
+  <p id="eProg" class="hidden mb-2 px-4 text-center text-xs md:text-sm font-black tracking-[.15em] text-emerald-300"></p>
   <button id="eWind" class="hidden pointer-events-auto mb-1 px-8 py-3 rounded-full bg-amber-300 hover:bg-amber-200 text-black font-black tracking-widest shadow-[0_0_30px_rgba(252,211,77,.5)]">&#9654; SECOND WIND<span class="block text-[10px] font-bold tracking-[.15em] text-black/60">WATCH AN AD, GET BACK UP WITH 50% HP</span></button>
   <div class="pointer-events-auto flex flex-col sm:flex-row gap-3">
     <button id="eAgain" data-sfx="start" class="px-8 py-3 rounded-full bg-orange-500 hover:bg-orange-400 text-black font-bold tracking-widest">REMATCH</button>
@@ -85,24 +87,24 @@
 </section>
 
 <!-- Classic scripts (not ES modules) so the game also runs from file://. ?v=N: bump N on every deploy so browsers never mix cached old files with new ones -->
-<script src="vendor/matter.min.js?v=9"></script>   <!-- Matter.js 0.19.0, bundled -->
-<script src="core.js?v=9"></script>
+<script src="vendor/matter.min.js?v=10"></script>   <!-- Matter.js 0.19.0, bundled -->
+<script src="core.js?v=10"></script>
 <!-- ad breaks (Poki SDK on Poki only; ?adtest shows fake ads anywhere) -->
-<script src="ads.js?v=9"></script>
+<script src="ads.js?v=10"></script>
 <!-- one file per spinner; each registers itself with defineSpinner(). Add a new spinner by adding its file here. -->
-<script src="spinners/bigboy.js?v=9"></script>
-<script src="spinners/whirl.js?v=9"></script>
-<script src="spinners/clockwork.js?v=9"></script>
-<script src="spinners/scrapking.js?v=9"></script>
-<script src="spinners/eater.js?v=9"></script>
-<script src="spinners/monster.js?v=9"></script>
-<script src="spinners/mama.js?v=9"></script>
-<script src="spinners/paradox.js?v=9"></script>
-<script src="audio.js?v=9"></script>
-<script src="game.js?v=9"></script>
+<script src="spinners/bigboy.js?v=10"></script>
+<script src="spinners/whirl.js?v=10"></script>
+<script src="spinners/clockwork.js?v=10"></script>
+<script src="spinners/scrapking.js?v=10"></script>
+<script src="spinners/eater.js?v=10"></script>
+<script src="spinners/monster.js?v=10"></script>
+<script src="spinners/mama.js?v=10"></script>
+<script src="spinners/paradox.js?v=10"></script>
+<script src="audio.js?v=10"></script>
+<script src="game.js?v=10"></script>
 <!-- arenas register after game.js (they use its constants); add an arena by calling defineArena() in arenas.js -->
-<script src="arenas.js?v=9"></script>
+<script src="arenas.js?v=10"></script>
 <!-- touch sticks for phones and tablets, and pausing when the page goes to the background -->
-<script src="touch.js?v=9"></script>
+<script src="touch.js?v=10"></script>
 </body>
 </html>
