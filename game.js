@@ -2212,11 +2212,11 @@ addEventListener('keydown',e=>{
 addEventListener('keyup',e=>{keys[e.code]=false;});
 addEventListener('blur',()=>{for(const k in keys) keys[k]=false; if(state==='game'&&game&&!game.over) setPause(true);});
 
-// very first visit: PLAY drops straight into a match (Big Boy vs a random CPU, Classic arena); after that it opens the select screen
+// very first visit: PLAY drops straight into a match (Monster vs a CPU Whirl, Classic arena: both quick, so the first fight starts fast); after that it opens the select screen
 $('#btnPlay').onclick=()=>{
   let fresh=prog.played===0; try{if(localStorage.getItem(PICKS_KEY)!==null) fresh=false;}catch{}
   if(!fresh){setMode('1p'); return;}
-  mode='1p'; sel[0].ctrl='human'; sel[1].ctrl='cpu'; activeSlot=0; sel[0].fighter='bigboy'; cpuRandom=true; selArena='classic';
+  mode='1p'; sel[0].ctrl='human'; sel[1].ctrl='cpu'; activeSlot=0; sel[0].fighter='monster'; sel[1].fighter='whirl'; cpuRandom=false; selArena='classic';
   savePicks(); beginMatch();
 };
 $('#btn2p').onclick=()=>setMode('2p');
