@@ -58,7 +58,7 @@ defineSpinner({
   def:{
     id:'whirl', mat:'alloy', name:'Whirl', r:29, m:1.2, hp:110, parts:3, partY:-.2, kind:'blade', prev:2.3,
     sub:'Light &middot; gravity field',
-    desc:'Quick and slippery: hits glance off her. Her gravity field drags rivals in, slows them down and burns them, and the closer they are the more it hurts. Touching her does nothing. Lose her blades and the field shrinks and weakens.',
+    desc:'Tiny, spinny and very slippery: hits slide right off her. Her gravity field sucks you in, slows you down and burns. Touching her does nothing, which is somehow worse.',
     stats:{Speed:92, Power:65, Health:40}
   },
   sig:{main:['#7c4dff','#2ef2d0'], rival:['#ff3d8b','#ffe0ef']},

@@ -325,7 +325,7 @@ defineSpinner({
   def:{
     id:'scrapking', mat:'junk', name:'Scrap-King', r:40, m:4, hp:165, parts:8, kind:'plate', prev:1.8,
     sub:'Heavy &middot; magnetic scrap shield',
-    desc:'Heavy and opportunistic. Pulls shattered scrap from the arena floor into a jagged orbiting shield, then blasts it outward in a lethal storm. Break their magnetic plates to shrink their swarm.',
+    desc:'A hoarder with a magnet. He drags loose scrap into a spinning junk shield, then flings the whole pile at you. One spinner&rsquo;s trash is his crown.',
     stats:{Speed:40, Power:78, Health:80}
   },
   sig:{main:['#b4592a','#ffb21a'], rival:['#6f8398','#35d6e8']},

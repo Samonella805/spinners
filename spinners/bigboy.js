@@ -43,7 +43,7 @@ defineSpinner({
   def:{
     id:'bigboy', mat:'iron', name:'Big Boy', r:44, m:5, hp:185, parts:10, kind:'tooth', prev:1.7,
     sub:'Heavy &middot; builds rage',
-    desc:'Slow and heavy, but he never stops building speed. The faster he spins the harder he hits, and the speed resets on the hit that lands. Teeth snap off as he takes damage, and every lost tooth weakens his strikes.',
+    desc:'Big, slow and grumpy. The longer he goes without hitting something, the faster he spins and the harder he hits. Landing a hit calms him down. Briefly.',
     stats:{Speed:28, Power:95, Health:90}
   },
   sig:{main:['#e8442b','#ffc93c'], rival:['#2f80ed','#e0f2ff']},

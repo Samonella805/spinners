@@ -55,7 +55,7 @@ defineSpinner({
   def:{
     id:'monster', mat:'spring', name:'Monster', r:30, m:1.6, hp:120, parts:6, kind:'fin', prev:2.2,
     sub:'Light &middot; ricochet frenzy',
-    desc:'Fast, light and hard to pin down. Every bounce off the arena wall adds a Ricochet stack, up to four, boosting his speed, acceleration and the damage of his next hit. Wall slams never hurt him. The moment a hit lands, he deals the boosted smash and every stack resets.',
+    desc:'Had way too much sugar. Every wall bounce winds him up (up to four times) and his next hit lands like a truck. Walls never hurt him. He loves walls.',
     stats:{Speed:88, Power:55, Health:50}
   },
   sig:{main:['#22d3a6','#ff5ea8'], rival:['#ffb020','#5b2bff']},

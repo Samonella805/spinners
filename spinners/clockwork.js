@@ -10,7 +10,7 @@ const CW_CYCLES = [
 ];
 const CW_OVER = 5;          // Overdrive ("Sandevistan") length in seconds
 const CW_OVER_BOOST = 1.5;  // Clockwork's speed / acceleration / spin multiplier in Overdrive
-const CW_SLOW = .35;        // everyone else's time scale in Overdrive (was .2: Overdrive alone won every fight against the heavies)
+const CW_SLOW = .42;        // everyone else's time scale in Overdrive (was .2: Overdrive alone won every fight against the heavies)
 const CW_OVER_HITCD = .4;   // Clockwork's hit cooldown in Overdrive (normal is .35)
 const CW_OVER_DMG = 1.1;    // Clockwork's contact-damage multiplier in Overdrive (was 1.6)
 const CW_OVER_TAKEN = .3;   // damage Clockwork still takes in Overdrive (30%), from touch, shrapnel and burns
@@ -128,7 +128,7 @@ defineSpinner({
   def:{
     id:'clockwork', mat:'brass', name:'Clockwork', r:36, m:2.6, hp:150, parts:12, kind:'cogtooth', prev:1.9,
     sub:'Precise &middot; escalating time-warp',
-    desc:'Every tick builds pressure until time fractures around them, blurring the arena into slow motion, followed by a brief, fragile burnout. They wind faster with every cycle. Break their teeth to dull their blows, never their rhythm.',
+    desc:'Tick, tock, tick&hellip; BOOM. Every tick winds them up until time snaps and everyone else moves in slow motion. Then they need a little lie-down.',
     stats:{Speed:62, Power:60, Health:62}
   },
   sig:{main:['#d9a441','#c0642f'], rival:['#9fb3c8','#2ec4b6']},

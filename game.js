@@ -1870,6 +1870,7 @@ function show(id){
 }
 function setScreen(name){
   state=name;
+  if(name!=='game') Ads.gameplayStop();
   $('#menu').classList.toggle('hidden',name!=='menu');
   $('#select').classList.toggle('hidden',name!=='select');
   $('#game').classList.toggle('hidden',name!=='game');
@@ -1879,7 +1880,7 @@ function setScreen(name){
 }
 function startGame(){
   applyDefaults();
-  const A=ARENAS[selArena]||ARENAS.classic, sp=R*(A.spawn||.55);
+  const A=ARENAS[matchArena]||ARENAS[selArena]||ARENAS.classic, sp=R*(A.spawn||.55);
   const f0=new Fighter(DEFS[sel[0].fighter],sel[0],0,-sp,0);
   const f1=new Fighter(DEFS[sel[1].fighter],sel[1],1,sp,0);
   game={fighters:[f0,f1],parts:[],shake:0,hitStop:0,slowT:0,timeScale:1,dil:1,dilK:0,acc:0,scrape:0,sizzle:0,magnet:0,
@@ -1895,18 +1896,41 @@ function startGame(){
 }
 function showEnd(){
   const g=game; g.endShown=true;
+  Ads.gameplayStop();
+  // Second Wind: lost to the CPU in a one-player match? Offer one opt-in rewarded ad to get back up (once per match)
+  const me=g.fighters.find(f=>f.ctrl==='human'), cpu=g.fighters.find(f=>f.ctrl==='cpu');
+  $('#eWind').classList.toggle('hidden',!(me&&cpu&&!me.alive&&g.winner===cpu&&!g.secondUsed&&Ads.canReward()));
   const el=$('#endTitle');
   if(g.winner){el.textContent=g.winner.name+' WINS'; el.style.color=g.winner.c1; el.style.textShadow=`0 0 40px ${g.winner.c1}`;}
   else {el.textContent='DOUBLE K.O.'; el.style.color='#e2e8f0'; el.style.textShadow='none';}
   $('#endStats').innerHTML=statsHTML(g);
+  $('#end').querySelector('p').textContent='K.O.';
   $('#end').classList.remove('hidden');
 }
 function setPause(p){
   if(state!=='game'||!game||game.over&&game.endShown) return;
   joyClear();
+  if(p) Ads.gameplayStop(); else if(game.countdown<=0&&!game.over) Ads.gameplayStart();
   game.paused=p; $('#pause').classList.toggle('hidden',!p);
 }
 
+// Second Wind (opt-in rewarded ad on the end screen): the KO'd human spinner is rebuilt where it fell with half its HP and plates,
+// and the round resumes after a short countdown. Once per match.
+function secondWind(){
+  const g=game, f=g&&g.fighters.find(x=>x.ctrl==='human'); if(!f||f.alive||g.secondUsed) return;
+  g.secondUsed=true;
+  g.dying=g.dying.filter(d=>d.f!==f); f.dying=false; f.dyU=0; f.alive=true;
+  f.hp=f.hpLag=Math.round(f.maxHp*.5); f.lastStand=false; f.flash=1; f.stallT=0; f.launchT=0;
+  const half=Math.ceil(f.parts.length/2); f.parts.forEach((p,i)=>{if(i<half){p.alive=true; p.dmg=Math.min(p.dmg,.3); p.tt=0;}});
+  f._pk=-1;   // redraw the HUD's plate pips
+  const dc=Math.hypot(f.x,f.y), lim=R*.6; if(dc>lim){f.x*=lim/dc; f.y*=lim/dc;}
+  f.vx=f.vy=0; f.spin=f.baseSpin();
+  makeProxy(g,f);
+  g.over=false; g.winner=null; g.endShown=false; g.endT=0; g.finalK=0; g.idleT=0; g.slowT=0; g.countdown=1.5;
+  $('#end').classList.add('hidden');
+  for(let i=0;i<40;i++){const a=rand(0,TAU),sp=rand(120,380); addSpark(g,f.x,f.y,Math.cos(a)*sp,Math.sin(a)*sp,rand(.3,.6),Math.random()<.5?'#ffd166':f.c2,rand(1.2,2.6));}
+  addRing(g,f.x,f.y,f.r,f.r*5,.6,'#ffd166',5); addText(g,f.x,f.y-f.r-26,'SECOND WIND!','#ffd166',24);
+}
 // Time dilation (Clockwork's Overdrive): while exactly one spinner is dilating time (warpFactor()>0), every other spinner,
 // Matter debris and world particle runs at that factor. Two spinners dilating at once cancel out. A KO or a decided match ends it at once.
 function updateDilation(g){
@@ -1923,7 +1947,7 @@ function simTick(g){
   const dt=SIM_DT*g.timeScale;
   updateDilation(g);
   if(g.countdown>0){
-    g.countdown-=SIM_DT; if(g.countdown<=0){g.fightT=.9;}
+    g.countdown-=SIM_DT; if(g.countdown<=0){g.fightT=.9; Ads.gameplayStart();}
     for(const f of g.fighters){f.t+=dt; f.angle+=f.spin*dt;}
   } else {
     g.fightT=Math.max(0,g.fightT-SIM_DT);
@@ -2007,68 +2031,93 @@ function applyDefaults(){
     sel[i].mirror=mirror; sel[i].c1=p[0]; sel[i].c2=p[1];
   }
 }
-function statBars(d,i){
-  const col=i===0?'bg-orange-400':'bg-sky-400';
-  return Object.entries(d.stats).map(([k,v])=>`
-    <div><div class="flex justify-between text-[11px] text-slate-400"><span>${k}</span></div>
-    <div class="h-1.5 rounded bg-white/10"><div class="h-full rounded ${col}" style="width:${v}%"></div></div></div>`).join('');
+/* ---- Mode and picks. PLAY ('1p'): you against the CPU (its spinner is random unless you choose it). 2 PLAYERS ('2p'): both human,
+        P1 picks then P2. WATCH ('cpu'): CPU against CPU, picked the same way as 2 players.
+        The last picks are remembered, so a returning player can go straight to FIGHT. ---- */
+let mode='1p', cpuRandom=true, matchArena=null;
+let activeSlot=0;   // which slot the next roster pick goes to
+const PICKS_KEY='spin.picks';
+function savePicks(){try{localStorage.setItem(PICKS_KEY,JSON.stringify({p0:sel[0].fighter,p1:sel[1].fighter,cpuRandom,arena:selArena}));}catch{}}
+function loadPicks(){
+  try{const p=JSON.parse(localStorage.getItem(PICKS_KEY)); if(!p) return;
+    if(DEFS[p.p0]) sel[0].fighter=p.p0; if(DEFS[p.p1]) sel[1].fighter=p.p1; cpuRandom=p.cpuRandom!==false;
+    if(p.arena==='random'||(typeof ARENAS!=='undefined'&&ARENAS[p.arena])) selArena=p.arena;}catch{}
 }
-let activeSlot=0;   // which player the next roster pick goes to
-function cardHTML(i){
-  const s=sel[i], d=DEFS[s.fighter];
+function setMode(m){
+  mode=m; sel[0].ctrl=m==='cpu'?'cpu':'human'; sel[1].ctrl=m==='2p'?'human':'cpu'; activeSlot=0;
+  setScreen('select');
+}
+const randomSlot=i=>mode==='1p'&&i===1&&cpuRandom;
+function slotHTML(i){
+  const s=sel[i], d=DEFS[s.fighter], rnd=randomSlot(i), on=activeSlot===i;
+  const who=mode==='1p'?(i?'CPU':'YOU'):mode==='cpu'?'CPU '+(i+1):'PLAYER '+(i+1);
   const accent=i?'text-sky-300':'text-orange-300';
-  const ring=activeSlot===i?(i?'border-sky-400/80 shadow-[0_0_24px_rgba(56,189,248,.25)]':'border-orange-400/80 shadow-[0_0_24px_rgba(251,146,60,.25)]'):'border-white/10';
+  const ring=on?(i?'border-sky-400/80 shadow-[0_0_24px_rgba(56,189,248,.3)] bg-sky-400/5':'border-orange-400/80 shadow-[0_0_24px_rgba(251,146,60,.3)] bg-orange-400/5'):'border-white/10 bg-white/5';
+  const hint=on?(mode==='2p'||i===0?'PICKING':'PICK THE CPU'):(mode==='1p'&&i===1?'TAP TO CHOOSE':'TAP TO CHANGE');
   return `
-  <div data-act="slot" data-i="${i}" class="rounded-2xl border ${ring} bg-white/5 backdrop-blur p-3 md:p-4 cursor-pointer transition">
-    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-      <span class="text-[10px] md:text-xs tracking-[0.2em] md:tracking-[0.3em] font-bold ${accent}">PLAYER ${i+1} &middot; ${d.name.toUpperCase()}${activeSlot===i?' &middot; PICKING':''}</span>
-      <div class="flex rounded-lg overflow-hidden border border-white/10 text-xs font-bold">
-        <button data-act="ctrl" data-i="${i}" data-v="human" class="px-3 py-1.5 ${s.ctrl==='human'?'bg-white text-black':'text-slate-300 hover:bg-white/10'}">HUMAN</button>
-        <button data-act="ctrl" data-i="${i}" data-v="cpu" class="px-3 py-1.5 ${s.ctrl==='cpu'?'bg-white text-black':'text-slate-300 hover:bg-white/10'}">CPU</button>
-      </div>
-    </div>
-    <div class="flex gap-4 items-center">
-      <canvas data-prev="${i}" width="200" height="200" class="w-24 h-24 md:w-36 md:h-36 shrink-0 rounded-xl bg-black/30"></canvas>
-      <div class="flex-1 space-y-2">${statBars(d,i)}<div class="text-[11px] text-slate-400">HP ${d.hp}</div></div>
-    </div>
-    <p class="text-xs md:text-sm text-slate-300/80 mt-3 md:min-h-[7.5rem]">${d.desc}</p>
-    <div class="mt-3 flex items-center gap-2 text-xs text-slate-400">
-      <span class="w-5 h-5 rounded-full border border-white/30" style="background:${s.c1}"></span>
-      <span class="w-5 h-5 rounded-full border border-white/30" style="background:${s.c2}"></span>
-      <span>${s.mirror?'Rival colours (mirror match)':'Signature colours'}</span>
-    </div>
-  </div>`;
+  <button data-act="slot" data-i="${i}" class="rounded-2xl border ${ring} p-2 md:p-4 flex flex-col items-center gap-1 transition min-w-0">
+    <span class="text-[10px] md:text-xs tracking-[.3em] font-black ${accent}">${who}</span>
+    <canvas data-prev="${i}" width="200" height="200" class="w-20 h-20 md:w-32 md:h-32 rounded-xl bg-black/30"></canvas>
+    <span class="font-extrabold text-base md:text-xl leading-tight">${rnd?'Random':d.name}</span>
+    <span class="text-[10px] md:text-[11px] text-slate-400 text-center leading-tight">${rnd?'A surprise every match':d.sub}</span>
+    <span class="text-[9px] md:text-[10px] tracking-[.25em] font-bold ${on?accent:'text-slate-500'} mt-1">${hint}</span>
+  </button>`;
 }
 // roster: one tile per spinner in DEFS. Adding a spinner to DEFS adds a tile, no menu changes needed.
 function rosterHTML(){
-  return Object.values(DEFS).map(d=>{
-    const picks=[0,1].filter(i=>sel[i].fighter===d.id);
-    const badges=picks.map(i=>`<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${i?'bg-sky-400 text-black':'bg-orange-400 text-black'}">P${i+1}</span>`).join('');
-    const ring=picks.length?(picks.includes(activeSlot)?'border-white/70 bg-white/15':'border-white/40 bg-white/10'):'border-white/10 bg-white/5 hover:bg-white/10';
+  const tiles=Object.values(DEFS).map(d=>{
+    const picks=[0,1].filter(i=>sel[i].fighter===d.id&&!randomSlot(i));
+    const badges=picks.map(i=>`<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${i?'bg-sky-400 text-black':'bg-orange-400 text-black'}">${mode==='1p'?(i?'CPU':'YOU'):(mode==='cpu'?'C':'P')+(i+1)}</span>`).join('');
+    const ring=picks.includes(activeSlot)?'border-white/70 bg-white/15':picks.length?'border-white/30 bg-white/10':'border-white/10 bg-white/5 hover:bg-white/10';
     return `
     <button data-act="pick" data-v="${d.id}" data-sfx="select" class="relative flex flex-col items-center rounded-2xl border ${ring} p-2 md:p-3 transition hover:scale-[1.03]">
-      <span class="absolute top-2 right-2 flex gap-1">${badges}</span>
-      <canvas data-roster="${d.id}" width="120" height="120" class="w-16 h-16 md:w-24 md:h-24 rounded-xl bg-black/30"></canvas>
-      <div class="mt-1 md:mt-2 text-sm md:text-base font-extrabold">${d.name}</div>
-      <div class="text-[11px] text-slate-400 text-center">${d.sub}</div>
+      <span class="absolute top-1.5 right-1.5 flex gap-1">${badges}</span>
+      <canvas data-roster="${d.id}" width="120" height="120" class="w-14 h-14 md:w-20 md:h-20 rounded-xl bg-black/30"></canvas>
+      <div class="mt-1 text-xs md:text-sm font-extrabold">${d.name}</div>
     </button>`;
-  }).join('');
+  });
+  if(mode==='1p'&&activeSlot===1) tiles.push(`
+    <button data-act="pick" data-v="random" data-sfx="select" class="flex flex-col items-center justify-center rounded-2xl border ${cpuRandom?'border-white/70 bg-white/15':'border-white/10 bg-white/5 hover:bg-white/10'} p-2 md:p-3 transition hover:scale-[1.03]">
+      <div class="w-14 h-14 md:w-20 md:h-20 rounded-xl bg-black/30 flex items-center justify-center text-3xl md:text-4xl font-black text-slate-300">?</div>
+      <div class="mt-1 text-xs md:text-sm font-extrabold">Random</div>
+    </button>`);
+  return tiles.join('');
 }
 function renderCards(){
   applyDefaults();
-  $('#cards').innerHTML=cardHTML(0)+cardHTML(1);
+  $('#selTitle').textContent=mode==='1p'?(activeSlot?'PICK THE CPU':'PICK YOUR SPINNER'):mode==='cpu'?'PICK CPU '+(activeSlot+1):'PLAYER '+(activeSlot+1)+', PICK';
+  $('#cards').innerHTML=slotHTML(0)+'<span class="text-2xl md:text-4xl font-black italic text-slate-400 px-1">VS</span>'+slotHTML(1);
+  const d=DEFS[sel[activeSlot].fighter];
+  $('#selDesc').innerHTML=randomSlot(activeSlot)?'Every match, the CPU picks a different spinner.':d.desc;
   $('#roster').innerHTML=rosterHTML();
-  $('#arenas').innerHTML=arenaPickHTML();
-  $('#arenaDesc').textContent=(ARENAS[selArena]||ARENAS.classic).desc;
+  $('#arenas').innerHTML=arenaPickHTML()+`
+    <button data-act="arena" data-v="random" data-sfx="select" class="flex flex-col items-center justify-center rounded-2xl border ${selArena==='random'?'border-orange-300/80 bg-white/15':'border-white/10 bg-white/5 hover:bg-white/10'} p-2 transition">
+      <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl bg-black/30 flex items-center justify-center text-2xl font-black text-slate-300">?</div>
+      <div class="mt-1 text-xs md:text-sm font-extrabold">Random</div>
+    </button>`;
+  $('#arenaDesc').textContent=selArena==='random'?'A different arena every match.':(ARENAS[selArena]||ARENAS.classic).desc;
 }
 $('#select').addEventListener('click',e=>{
   const b=e.target.closest('[data-act]'); if(!b) return;
   const act=b.dataset.act;
-  if(act==='pick'){sel[activeSlot].fighter=b.dataset.v; activeSlot=1-activeSlot; renderCards();}   // fill the highlighted player, then move on to the other
+  if(act==='pick'){
+    if(mode==='1p'){
+      if(activeSlot===1){cpuRandom=b.dataset.v==='random'; if(!cpuRandom) sel[1].fighter=b.dataset.v; activeSlot=0;}   // chose the CPU: back to your own pick
+      else if(b.dataset.v!=='random') sel[0].fighter=b.dataset.v;
+    } else {sel[activeSlot].fighter=b.dataset.v; activeSlot=1-activeSlot;}   // two players or two CPUs: fill this one, then the other
+    savePicks(); renderCards();
+  }
   else if(act==='slot'){activeSlot=+b.dataset.i; renderCards();}
-  else if(act==='ctrl'){sel[+b.dataset.i].ctrl=b.dataset.v; renderCards();}
-  else if(act==='arena'){selArena=b.dataset.v; renderCards();}
+  else if(act==='arena'){selArena=b.dataset.v; savePicks(); renderCards();}
 });
+// FIGHT from the select screen: settle any random picks for this match (a rematch keeps them)
+function beginMatch(){
+  const ids=Object.keys(DEFS);
+  if(mode==='1p'&&cpuRandom){const pool=ids.filter(id=>id!==sel[0].fighter); sel[1].fighter=pool[(Math.random()*pool.length)|0];}
+  const ars=ARENA_LIST.map(a=>a.id);
+  matchArena=selArena==='random'?ars[(Math.random()*ars.length)|0]:selArena;
+  startGame();
+}
 // one preview painter for the big slot previews (200px) and the roster tiles (120px)
 function drawPreview(c,size,d,c1,c2,t){
   const h=size/2, k=size/200;
@@ -2081,8 +2130,14 @@ function drawPreview(c,size,d,c1,c2,t){
 }
 function renderPreviews(t){
   document.querySelectorAll('canvas[data-prev]').forEach(cn=>{
-    const s=sel[+cn.dataset.prev];
-    drawPreview(cn.getContext('2d'),200,DEFS[s.fighter],s.c1,s.c2,t);
+    const i=+cn.dataset.prev, s=sel[i], c=cn.getContext('2d');
+    if(randomSlot(i)){   // the random CPU: a dark spinner shape with a pulsing question mark
+      c.setTransform(1,0,0,1,0,0); c.clearRect(0,0,200,200); c.fillStyle='#14152a'; c.fillRect(0,0,200,200);
+      c.save(); c.translate(100,100); c.rotate(t*2); c.strokeStyle='rgba(148,163,184,.35)'; c.lineWidth=6; c.setLineDash([18,14]); c.beginPath(); c.arc(0,0,62,0,TAU); c.stroke(); c.restore();
+      c.fillStyle=`rgba(203,213,225,${.65+.35*Math.sin(t*3)})`; c.font='900 84px ui-sans-serif,system-ui'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('?',100,104);
+      return;
+    }
+    drawPreview(c,200,DEFS[s.fighter],s.c1,s.c2,t);
   });
   document.querySelectorAll('canvas[data-roster]').forEach(cn=>{
     const d=DEFS[cn.dataset.roster], p=SIG[d.id].main;
@@ -2111,20 +2166,26 @@ addEventListener('keydown',e=>{
 addEventListener('keyup',e=>{keys[e.code]=false;});
 addEventListener('blur',()=>{for(const k in keys) keys[k]=false; if(state==='game'&&game&&!game.over) setPause(true);});
 
-$('#btnPlay').onclick=()=>setScreen('select');
+$('#btnPlay').onclick=()=>setMode('1p');
+$('#btn2p').onclick=()=>setMode('2p');
+$('#btnWatch').onclick=()=>setMode('cpu');
 $('#btnHow').onclick=()=>$('#how').classList.toggle('hidden');
 $('#btnBack').onclick=()=>setScreen('menu');
-$('#btnFight').onclick=startGame;
+$('#btnFight').onclick=beginMatch;
 $('#btnPause').onclick=()=>setPause(true);
 $('#btnMute').onclick=()=>{SFX.unlock(); SFX.toggleMute(); syncMute();};
 syncMute();
 $('#pResume').onclick=()=>setPause(false);
-$('#pRestart').onclick=startGame;
-$('#pSelect').onclick=()=>setScreen('select');
-$('#pMenu').onclick=()=>setScreen('menu');
-$('#eAgain').onclick=startGame;
-$('#eSelect').onclick=()=>setScreen('select');
-$('#eMenu').onclick=()=>setScreen('menu');
+// leaving a match is a natural break: an ad may play first (Ads decides; nothing happens off Poki), then the next screen
+const afterAd=fn=>()=>Ads.commercial().then(fn);
+$('#pRestart').onclick=afterAd(startGame);
+$('#pSelect').onclick=afterAd(()=>setScreen('select'));
+$('#pMenu').onclick=afterAd(()=>setScreen('menu'));
+$('#eAgain').onclick=afterAd(startGame);
+$('#eSelect').onclick=afterAd(()=>setScreen('select'));
+$('#eMenu').onclick=afterAd(()=>setScreen('menu'));
+$('#eWind').onclick=()=>Ads.rewarded().then(ok=>{if(ok) secondWind();});
+loadPicks(); Ads.loaded();
 
 /* =====================================================================
    MAIN LOOP

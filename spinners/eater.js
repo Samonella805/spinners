@@ -153,7 +153,7 @@ defineSpinner({
   def:{
     id:'eater', mat:'furnace', name:'Eater', r:38, m:3.6, hp:150, parts:EA_N, kind:'jaw', prev:1.9,
     sub:'Heavy &middot; devours scrap',
-    desc:'Ravenous and relentless. Every bite it lands feeds it, and it devours shattered scrap from the arena floor to mend its hull&mdash;feasting even harder on rival parts. At full health, its touch infects loose debris with a corrosive drain that saps anyone else who collides with it. Shatter its jaw-plates to slow its feast.',
+    desc:'Always hungry. Every bite she lands heals her, and she snacks on loose scrap off the floor. At full health her drool turns scrap into acid traps. Gross, but it works.',
     stats:{Speed:40, Power:60, Health:75}
   },
   sig:{main:['#7a8c4a','#ff8a1f'], rival:['#8a5cff','#c8ff3a']},
