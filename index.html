@@ -7,8 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Spin Arena</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="tw.css?v=9">   <!-- pre-built Tailwind (tailwind.config.js); after style.css, where the old CDN injected it, so ties resolve the same way -->
 </head>
 <body class="text-slate-100 select-none">
 <canvas id="cv" class="fixed inset-0"></canvas>
@@ -85,24 +85,24 @@
 </section>
 
 <!-- Classic scripts (not ES modules) so the game also runs from file://. ?v=N: bump N on every deploy so browsers never mix cached old files with new ones -->
-<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
-<script src="core.js?v=8"></script>
+<script src="vendor/matter.min.js?v=9"></script>   <!-- Matter.js 0.19.0, bundled -->
+<script src="core.js?v=9"></script>
 <!-- ad breaks (Poki SDK on Poki only; ?adtest shows fake ads anywhere) -->
-<script src="ads.js?v=8"></script>
+<script src="ads.js?v=9"></script>
 <!-- one file per spinner; each registers itself with defineSpinner(). Add a new spinner by adding its file here. -->
-<script src="spinners/bigboy.js?v=8"></script>
-<script src="spinners/whirl.js?v=8"></script>
-<script src="spinners/clockwork.js?v=8"></script>
-<script src="spinners/scrapking.js?v=8"></script>
-<script src="spinners/eater.js?v=8"></script>
-<script src="spinners/monster.js?v=8"></script>
-<script src="spinners/mama.js?v=8"></script>
-<script src="spinners/paradox.js?v=8"></script>
-<script src="audio.js?v=8"></script>
-<script src="game.js?v=8"></script>
+<script src="spinners/bigboy.js?v=9"></script>
+<script src="spinners/whirl.js?v=9"></script>
+<script src="spinners/clockwork.js?v=9"></script>
+<script src="spinners/scrapking.js?v=9"></script>
+<script src="spinners/eater.js?v=9"></script>
+<script src="spinners/monster.js?v=9"></script>
+<script src="spinners/mama.js?v=9"></script>
+<script src="spinners/paradox.js?v=9"></script>
+<script src="audio.js?v=9"></script>
+<script src="game.js?v=9"></script>
 <!-- arenas register after game.js (they use its constants); add an arena by calling defineArena() in arenas.js -->
-<script src="arenas.js?v=8"></script>
+<script src="arenas.js?v=9"></script>
 <!-- touch sticks for phones and tablets, and pausing when the page goes to the background -->
-<script src="touch.js?v=8"></script>
+<script src="touch.js?v=9"></script>
 </body>
 </html>

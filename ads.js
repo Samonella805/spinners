@@ -1,22 +1,39 @@
 /* =====================================================================
-   ADS: a thin wrapper round the Poki SDK.
-   - On Poki (a poki.com / poki-gdn.com host, or ?poki in the URL) it loads the SDK and uses it.
-   - Anywhere else (GitHub Pages, local files) every call is harmless: no ads, and rewarded offers are hidden.
-   - ?adtest in the URL shows fake, clearly labelled ads instead, so the flow can be tested without Poki.
-   The game only ever asks for ads at natural breaks: leaving the end screen, restarting or quitting from pause, and the opt-in
-   Second Wind on the end screen. Never during a round.
+   ADS: one small wrapper over the portal SDKs, so the game itself never cares where it runs.
+   - Poki         (a poki.com / poki-gdn.com host, or ?poki):              Poki SDK v2
+   - CrazyGames   (a crazygames host, or ?crazygames):                   CrazyGames SDK v3
+   - anywhere else (GitHub Pages, local files): every call is harmless, no ads, rewarded offers are hidden
+   - ?adtest: fake, clearly labelled ads anywhere, to test the flow without a portal
+   The game only asks for ads at natural breaks: leaving the end screen, restarting or quitting from pause, and the opt-in Second
+   Wind on the end screen. Never during a round. While an ad plays the game is silent and waits.
+   Check the SDK calls below against each portal's current documentation when uploading.
    ===================================================================== */
 const Ads=(()=>{
-  const q=location.search, test=/[?&]adtest\b/.test(q), onPoki=/(^|\.)poki(-gdn)?\.com$/.test(location.hostname)||/[?&]poki\b/.test(q);
-  let sdk=null, playing=false, busy=false;
+  const q=location.search, host=location.hostname, test=/[?&]adtest\b/.test(q);
+  const portal=/(^|\.)poki(-gdn)?\.com$/.test(host)||/[?&]poki\b/.test(q)?'poki'
+              :/crazygames/.test(host)||/[?&]crazygames\b/.test(q)?'crazy':null;
+  // a portal adapter: init(), loaded(), start(), stop(), midgame(onStart) -> Promise, rewarded(onStart) -> Promise<bool>
+  let A=null, playing=false, busy=false;
+  const ADAPTERS={
+    poki:{src:'https://game-cdn.poki.com/scripts/v2/poki-sdk.js',
+      make(){const P=window.PokiSDK; if(!P) return null; return P.init().catch(()=>{}).then(()=>({   // an ad blocker rejects init; the game must still run
+        loaded:()=>P.gameLoadingFinished(), start:()=>P.gameplayStart(), stop:()=>P.gameplayStop(),
+        midgame:on=>P.commercialBreak(on), rewarded:on=>P.rewardedBreak(on).then(r=>!!r)}));}},
+    crazy:{src:'https://sdk.crazygames.com/crazygames-sdk-v3.js',
+      make(){const C=window.CrazyGames&&window.CrazyGames.SDK; if(!C) return null;
+        const ad=(type,on)=>new Promise(res=>C.ad.requestAd(type,{adStarted:on,adFinished:()=>res(true),adError:()=>res(false)}));
+        return C.init().catch(()=>{}).then(()=>{try{C.game.loadingStart();}catch{} return {
+          loaded:()=>C.game.loadingStop(), start:()=>C.game.gameplayStart(), stop:()=>C.game.gameplayStop(),
+          midgame:on=>ad('midgame',on), rewarded:on=>ad('rewarded',on)};});}},
+  };
   const ready=new Promise(res=>{
-    if(!onPoki){res(); return;}
-    const s=document.createElement('script'); s.src='https://game-cdn.poki.com/scripts/v2/poki-sdk.js';
-    s.onload=()=>{const P=window.PokiSDK; if(!P){res(); return;} P.init().then(()=>{sdk=P; res();}).catch(()=>{sdk=P; res();});};   // an ad blocker rejects init; the game must still run
-    s.onerror=()=>res();
+    const P=ADAPTERS[portal]; if(!P){res(); return;}
+    const s=document.createElement('script'); s.src=P.src;
+    s.onload=()=>Promise.resolve(P.make()).then(a=>{A=a; res();}).catch(()=>res());
+    s.onerror=()=>res();   // blocked or offline: play on without ads
     document.head.appendChild(s);
   });
-  // while an ad plays the game is silent and frozen (the caller waits for the promise before doing anything)
+  const call=(fn,...a)=>{try{return A&&A[fn](...a);}catch{}};
   const quiet=on=>{try{SFX.background(on);}catch{}};
   // a stand-in ad for ?adtest: a dark screen with a countdown
   function fake(sec,label){
@@ -29,16 +46,16 @@ const Ads=(()=>{
     });
   }
   return {
-    ready,
-    loaded(){ready.then(()=>{try{sdk&&sdk.gameLoadingFinished();}catch{}});},
-    gameplayStart(){if(playing) return; playing=true; try{sdk&&sdk.gameplayStart();}catch{}},
-    gameplayStop(){if(!playing) return; playing=false; try{sdk&&sdk.gameplayStop();}catch{}},
+    portal, ready,
+    loaded(){ready.then(()=>call('loaded'));},
+    gameplayStart(){if(playing) return; playing=true; call('start');},
+    gameplayStop(){if(!playing) return; playing=false; call('stop');},
     // an ad break at a natural pause; resolves when the game may carry on (immediately when there is no ad)
     commercial(){
       this.gameplayStop();
       if(busy) return Promise.resolve();
       busy=true; quiet(true);
-      const p=sdk?sdk.commercialBreak(()=>quiet(true)):(test?fake(2,'AD BREAK'):Promise.resolve());
+      const p=A?call('midgame',()=>quiet(true)):(test?fake(2,'AD BREAK'):null);
       return Promise.resolve(p).catch(()=>{}).then(()=>{busy=false; quiet(false);});
     },
     // an opt-in rewarded ad; resolves true only if the player watched it through
@@ -46,9 +63,9 @@ const Ads=(()=>{
       this.gameplayStop();
       if(busy) return Promise.resolve(false);
       busy=true; quiet(true);
-      const p=sdk?sdk.rewardedBreak(()=>quiet(true)):(test?fake(3,'REWARDED AD').then(()=>true):Promise.resolve(false));
+      const p=A?call('rewarded',()=>quiet(true)):(test?fake(3,'REWARDED AD').then(()=>true):false);
       return Promise.resolve(p).catch(()=>false).then(ok=>{busy=false; quiet(false); return !!ok;});
     },
-    canReward(){return !!sdk||test;},
+    canReward(){return !!A||test;},
   };
 })();
