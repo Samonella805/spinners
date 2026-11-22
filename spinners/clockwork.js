@@ -10,9 +10,9 @@ const CW_CYCLES = [
 ];
 const CW_OVER = 5;          // Overdrive ("Sandevistan") length in seconds
 const CW_OVER_BOOST = 1.5;  // Clockwork's speed / acceleration / spin multiplier in Overdrive
-const CW_SLOW = .2;         // everyone else's time scale in Overdrive
+const CW_SLOW = .35;        // everyone else's time scale in Overdrive (was .2: Overdrive alone won every fight against the heavies)
 const CW_OVER_HITCD = .4;   // Clockwork's hit cooldown in Overdrive (normal is .35)
-const CW_OVER_DMG = 1.6;    // Clockwork's contact-damage multiplier in Overdrive (was a .7 cap)
+const CW_OVER_DMG = 1.1;    // Clockwork's contact-damage multiplier in Overdrive (was 1.6)
 const CW_OVER_TAKEN = .3;   // damage Clockwork still takes in Overdrive (30%), from touch, shrapnel and burns
 const CW_WALK = .45;        // AI gait: walk speed / accel as a fraction of the run (wind-up only)
 const CW_BACK_GAP = 80;     // Overdrive slam loop: gap (px beyond touching) it pulls back to before charging again

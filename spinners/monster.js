@@ -96,7 +96,7 @@ defineSpinner({
     dragK(){return .8;}
     baseSpin(){return 20;}
     spinPitch(){return 1+MO_PITCH_STK*this.mo.stk;}   // the spin sound climbs with every stack
-    contactDamage(impact){return impact*.04*(1+MO_DMG_STK*this.mo.stk)*(.6+.4*this.aliveFrac());}
+    contactDamage(impact){return impact*.046*(1+MO_DMG_STK*this.mo.stk)*(.6+.4*this.aliveFrac());}   // .046 (was .04)
     reach(){return 110;}
     charges(){return this.mo.stk>=2;}   // rivals keep clear once he is wound up
     wallImmune(){return true;}          // his own ricochets (and launches into the wall) never cost him HP

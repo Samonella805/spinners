@@ -2,6 +2,7 @@
    BIG BOY: heavy, builds rage (speed and damage) until a hit lands, then the rage resets.
    ===================================================================== */
 const RAGE_TIME = 9;   // seconds for Big Boy to reach full speed
+const BB_RAGE_DMG = 1.8; // full rage adds this much to his hit damage (x2.8 at full rage)
 const CHG_GAP = 85;    // px of clear space Big Boy backs off to for a run-up when stuck pushing
 const TOOTH_W=Math.PI/10*.86;
 function toothPts(r){return polar([[-TOOTH_W,.84],[-TOOTH_W*.4,1],[TOOTH_W*.4,1],[TOOTH_W,.84]],r);}
@@ -71,7 +72,8 @@ defineSpinner({
     accel(){return (170+this.rage*520)*(1+.25*this.bankK);}
     dragK(){return .55*(1-.35*this.bankK);}
     baseSpin(){return 10+this.rage*20;}
-    contactDamage(impact){return impact*0.05*(1+this.rage*3)*(.55+.45*this.aliveFrac());}
+    // rage multiplies his hits up to x2.8 (it was x4, which won every straight trade: 100% against Eater and Monster)
+    contactDamage(impact){return impact*0.05*(1+this.rage*BB_RAGE_DMG)*(.55+.45*this.aliveFrac());}
     reach(){return 170+this.rage*140;}      // how far past its body rivals should keep clear
     charges(){return true;}                  // rivals treat it as a charger that gets scarier as rage builds
     think(dt){this.rage=Math.min(1,this.rage+dt/RAGE_TIME);}
@@ -92,7 +94,7 @@ defineSpinner({
       for(let i=0;i<4;i++){const d=a+rand(-.5,.5), s=rand(60,160); g.parts.push({k:'dot',x,y,vx:Math.cos(d)*s+this.vx*.3,vy:Math.sin(d)*s+this.vy*.3,life:.4,max:.4,col:'#d98a1c',size:rand(1.4,2.4)});}
     }
     hud(lab,bar){
-      lab.textContent='RAGE  x'+(1+this.rage*3).toFixed(1)+' DMG';
+      lab.textContent='RAGE  x'+(1+this.rage*BB_RAGE_DMG).toFixed(1)+' DMG';
       bar.style.width=(this.rage*100)+'%';
     }
     aiMove(o,dx,dy,d,dt){return this.aiBig(o,dx,dy,d,dt);}

@@ -5,7 +5,9 @@ const AURA = 160;       // gravity radius
 const DEBRIS_PULL = 2600;   // px/s^2 the field applies to scraps at point-blank range
 const DEBRIS_REACH = 1.5;   // scraps feel the field out to this multiple of the visible aura
 const PULL = 520;       // pull force on rivals
-const DOT_DPS = 125;    // max damage per second (rival right next to her)
+const DOT_DPS = 140;    // max damage per second (rival right next to her; was 125)
+const WH_SLIP = .65;    // touch hits glance off her: she takes 65% of the damage
+const WH_DRAG = 2.5;    // her field thickens the air: rivals inside it lose speed (most at its centre), so a charge arrives softer
 function bladePath(c,r){
   c.beginPath(); c.moveTo(r*.25,-r*.12);
   c.quadraticCurveTo(r*.8,-r*.8,r*1.0,r*.1);
@@ -56,7 +58,7 @@ defineSpinner({
   def:{
     id:'whirl', mat:'alloy', name:'Whirl', r:29, m:1.2, hp:110, parts:3, partY:-.2, kind:'blade', prev:2.3,
     sub:'Light &middot; gravity field',
-    desc:'Quick and slippery. Her gravity field drags rivals in and burns them, and the closer they are the more it hurts. Touching her does nothing. Lose her blades and the field shrinks and weakens.',
+    desc:'Quick and slippery: hits glance off her. Her gravity field drags rivals in, slows them down and burns them, and the closer they are the more it hurts. Touching her does nothing. Lose her blades and the field shrinks and weakens.',
     stats:{Speed:92, Power:65, Health:40}
   },
   sig:{main:['#7c4dff','#2ef2d0'], rival:['#ff3d8b','#ffe0ef']},
@@ -89,6 +91,7 @@ defineSpinner({
     auraR(){return AURA*(.62+.38*this.aliveFrac());}
     fieldPow(){return .45+.55*this.aliveFrac();}
     reach(){return this.auraR();}
+    takenMul(){return WH_SLIP;}   // slippery: hits glance off
     // victory (visual only): her field pulses, a ring collapsing into her and another flaring out
     victory(g,dt,u){
       this.vicT=(this.vicT||0)-dt;
@@ -168,6 +171,7 @@ defineSpinner({
         g.sizzle=Math.max(g.sizzle,k);
         const pull=PULL*(.3+.7*k)*(.6+.4*w.aliveFrac());
         v.vx+=nx*pull/v.m*dt; v.vy+=ny*pull/v.m*dt;
+        if(!(v.launchT>0)){const dr=Math.exp(-WH_DRAG*k*dt); v.vx*=dr; v.vy*=dr;}
         const dmg=DOT_DPS*w.fieldPow()*(.06+.94*k*k)*dt;
         v.dotAcc+=dmg; v.dotT-=dt; v.dotSpark-=dt;
         if(v.dotSpark<=0){

@@ -14,6 +14,8 @@ const EA_CHARGES = 3;         // drains one infected piece can deliver before it
 const EA_DRAIN = 3;           // HP an infected piece drains from a rival it touches
 const EA_DRAIN_CD = 1.2;      // seconds between drains from the same piece (so it can't multi-tick in a frame)
 const EA_WEAK_T = 2;          // seconds a drained rival deals reduced strike damage (weakMul in game.js: x0.85)
+const EA_BITE = .048;          // touch damage per px/s of impact (was .04)
+const EA_STEAL = .6;           // share of its touch damage it heals: a bite feeds it, so it wins long trades
 const EA_GREEN = '#7dff3a', EA_VIOLET = '#b04dff';
 
 function mixHex(a,b,t){const A=hexRgb(a),B=hexRgb(b);return`rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')})`;}
@@ -151,7 +153,7 @@ defineSpinner({
   def:{
     id:'eater', mat:'furnace', name:'Eater', r:38, m:3.6, hp:150, parts:EA_N, kind:'jaw', prev:1.9,
     sub:'Heavy &middot; devours scrap',
-    desc:'Ravenous and relentless. Devours shattered scrap from the arena floor to mend its hull&mdash;feasting even harder on rival parts. At full health, its touch infects loose debris with a corrosive drain that saps anyone else who collides with it. Shatter its jaw-plates to slow its feast.',
+    desc:'Ravenous and relentless. Every bite it lands feeds it, and it devours shattered scrap from the arena floor to mend its hull&mdash;feasting even harder on rival parts. At full health, its touch infects loose debris with a corrosive drain that saps anyone else who collides with it. Shatter its jaw-plates to slow its feast.',
     stats:{Speed:40, Power:60, Health:75}
   },
   sig:{main:['#7a8c4a','#ff8a1f'], rival:['#8a5cff','#c8ff3a']},
@@ -209,7 +211,8 @@ defineSpinner({
     accel(){return 700;}
     dragK(){return .85;}
     baseSpin(){return 13;}
-    contactDamage(impact){return impact*.04*(.6+.4*this.aliveFrac());}   // lost jaw-plates weaken the bite
+    contactDamage(impact){return impact*EA_BITE*(.6+.4*this.aliveFrac());}   // lost jaw-plates weaken the bite
+    onHitDealt(g,dmg){heal(g,this,dmg*EA_STEAL);}   // every bite feeds it
     reach(){return 50;}
     flicks(){return false;}   // its jaws don't bat scrap around: eating stays exactly as it was
     physStep(g,dtIn){eaterPhys(g,this,dtIn*this.ts);}
