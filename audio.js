@@ -51,6 +51,8 @@ const SFX = (() => {
   let ctx = null, master = null, bus = null, noiseBuf = null, clip = null, warp = null, warpOn = false;
   let beatNext = 0;         // heartbeat: next scheduled beat (audio clock)
   let muted = store.get(KEY_MUTE) === '1';
+  let forced = false;       // the portal asked for silence (CrazyGames muteAudio): wins over the player's own toggle
+  const off = () => muted || forced;
   let volume = clamp(parseFloat(store.get(KEY_VOL) || '0.7'), 0, 1);
   let voices = 0;
   const last = {};          // per-sound rate limiting
@@ -60,7 +62,7 @@ const SFX = (() => {
   const MAX_VOICES = 28;
   const METAL = [1, 2.76, 5.4, 8.93];     // inharmonic partial ratios of a struck metal plate
 
-  function masterLevel() { return muted ? 0 : volume; }
+  function masterLevel() { return off() ? 0 : volume; }
 
   function build() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -90,7 +92,7 @@ const SFX = (() => {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
 
-  function ready() { return ctx && ctx.state === 'running' && !muted; }
+  function ready() { return ctx && ctx.state === 'running' && !off(); }
   function limit(name, ms) {
     const now = performance.now();
     if (last[name] && now - last[name] < ms) return false;
@@ -128,7 +130,7 @@ const SFX = (() => {
 
   function unlock() {
     if (!ctx) build();
-    if (ctx && ctx.state === 'suspended') ctx.resume();
+    if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume();   // 'suspended', or 'interrupted' after an iOS call or alarm
   }
 
   // a sine with a pitch drop, routed through the soft clipper so big hits get weight without hard distortion
@@ -427,7 +429,7 @@ const SFX = (() => {
   function setLoop(v, level, gain, tc) {
     const t = ctx.currentTime;
     v.level = level;
-    v.out.gain.setTargetAtTime(muted ? 0 : level * gain, t, tc || 0.05);
+    v.out.gain.setTargetAtTime(off() ? 0 : level * gain, t, tc || 0.05);
   }
   // hit-stop muffle: the spin hum drops to ~15% and its lowpass closes for sec seconds, then opens again in ~40 ms
   function duck(sec) {
@@ -682,7 +684,7 @@ const SFX = (() => {
 
   function applyMaster() {
     if (master) master.gain.setTargetAtTime(masterLevel(), ctx.currentTime, 0.02);
-    if (muted) silence();
+    if (off()) silence();
   }
   // the page went to the background (tab hidden, app switched): stop every sound at once, and bring it back on return
   function background(hidden) {
@@ -690,11 +692,12 @@ const SFX = (() => {
     if (hidden) { silence(); ctx.suspend(); } else ctx.resume();
   }
   function setMuted(m) { muted = !!m; store.set(KEY_MUTE, muted ? '1' : '0'); applyMaster(); }
+  function portalMute(m) { forced = !!m; applyMaster(); }
   function setVolume(v) { volume = clamp(v, 0, 1); store.set(KEY_VOL, String(volume)); applyMaster(); }
 
   return {
-    unlock, duck, click, clang, grind, wall, clatter, tink, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, stack, eat, acid, heartbeat, tick, sproing, pop, collapse, bellChime, gearGroan, timeWarp, silence, background, setMuted, setVolume,
+    unlock, duck, click, clang, grind, wall, clatter, tink, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, stack, eat, acid, heartbeat, tick, sproing, pop, collapse, bellChime, gearGroan, timeWarp, silence, background, setMuted, setVolume, portalMute,
     toggleMute() { setMuted(!muted); },
-    isMuted() { return muted; }
+    isMuted() { return off(); }
   };
 })();

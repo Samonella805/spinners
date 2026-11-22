@@ -5,7 +5,8 @@
    the whole screen is that player's stick; with two humans on one device the screen splits down the middle (left: P1, right: P2).
    Mouse input never creates a stick, so desktop play is unchanged. Loaded after game.js (it uses its state and canvas).
    ===================================================================== */
-const TOUCH=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+let TOUCH=('ontouchstart' in window)||navigator.maxTouchPoints>0;   // a first guess; the portal's device type replaces it once the SDK is ready
+Ads.ready.then(()=>{const d=Ads.device(); if(d) TOUCH=d!=='desktop';});
 const JOY_R=60;          // px of drag for full deflection
 const JOY_DEAD=.12;      // fraction of JOY_R that counts as centred
 const JOY_FOLLOW=1.5;    // drag further than this many JOY_R and the stick's base follows the thumb, so it never feels stuck
@@ -50,7 +51,7 @@ cv.addEventListener('touchmove',e=>{if(state==='game') e.preventDefault();},{pas
 // drawn in screen space over the finished frame: the stick's base ring and the thumb knob, in the player's HUD colour.
 // Before the first touch of a match on a touch device, a hint says how to steer.
 function drawJoys(c,g){
-  if(!TOUCH) return;
+  // the sticks only exist while a finger is down, so they draw on any device; the hint is for touch devices only
   c.save();
   for(let i=0;i<2;i++){
     const j=joys[i]; if(!j) continue;
@@ -60,7 +61,7 @@ function drawJoys(c,g){
     c.fillStyle=`rgba(${col},.55)`; c.strokeStyle='rgba(255,255,255,.7)';
     c.beginPath(); c.arc(kx,ky,24,0,TAU); c.fill(); c.stroke();
   }
-  if(g&&!g.touched&&!g.over&&g.fighters.some(f=>f.ctrl==='human')){   // (gone once the match is decided: it would sit on the end screen's buttons)
+  if(TOUCH&&g&&!g.touched&&!g.over&&g.fighters.some(f=>f.ctrl==='human')){   // (gone once the match is decided: it would sit on the end screen's buttons)
     if(joys[0]||joys[1]) g.touched=true;
     else{
       const a=.55+.35*Math.sin(g.time*4), two=g.fighters.every(f=>f.ctrl==='human');

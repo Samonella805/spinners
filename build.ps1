@@ -11,6 +11,12 @@
 # To update the game on a portal later: change the game, run this again, upload the new zip as a new version.
 # New spinner or arena files are picked up automatically (every .js in the root, spinners\ and vendor\).
 
+#
+#   build.ps1 -NoAds   the same build with every ad switched off (CrazyGames Basic Launch does not allow ads).
+#                      The SDK still gets its loading and gameplay events. Build without -NoAds once CrazyGames
+#                      moves the game to Full Launch, and for Poki.
+
+param([switch]$NoAds)
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 Set-Location $root
@@ -41,6 +47,10 @@ foreach ($d in @('spinners','vendor')) {
 $stamp = Get-Date -Format 'yyyyMMddHHmm'
 $html  = [IO.File]::ReadAllText((Join-Path $out 'index.html'))
 $html  = [regex]::Replace($html, '\?v=\d+', "?v=$stamp")
+if ($NoAds) {   # must run before ads.js reads it
+  $html = $html.Replace('<script src="ads.js', '<script>window.SPIN_NO_ADS=true;</script>' + "`n" + '<script src="ads.js')
+  if ($html -notmatch 'SPIN_NO_ADS') { throw 'could not switch ads off: ads.js tag not found' }
+}
 [IO.File]::WriteAllText((Join-Path $out 'index.html'), $html, (New-Object Text.UTF8Encoding $false))
 
 # every script and stylesheet index.html asks for must be in the build
@@ -50,7 +60,8 @@ if ($missing) { throw "index.html loads files that are not in the build: $($miss
 
 # 4. zip (paths use forward slashes, which upload servers expect)
 Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
-$zipPath = Join-Path $dist "spin-arena-$stamp.zip"
+$zipName = if ($NoAds) { "spin-arena-$stamp-noads.zip" } else { "spin-arena-$stamp.zip" }
+$zipPath = Join-Path $dist $zipName
 if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
 $zip = [IO.Compression.ZipFile]::Open($zipPath, 'Create')
 try {
@@ -62,5 +73,5 @@ try {
 
 $kb = [math]::Round((Get-Item $zipPath).Length / 1KB)
 Write-Host ''
-Write-Host "Done: dist\spin-arena-$stamp.zip ($kb KB, $((Get-ChildItem -Recurse -File $out).Count) files)"
+Write-Host "Done: dist\$zipName ($kb KB$(if ($NoAds) { ', ads off' }), $((Get-ChildItem -Recurse -File $out).Count) files)"
 Write-Host "Test it first: open dist\game\index.html, or add ?crazygames to the address when it is served."

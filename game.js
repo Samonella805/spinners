@@ -2195,7 +2195,7 @@ function renderPreviews(t){
 /* =====================================================================
    INPUT & BUTTONS
    ===================================================================== */
-addEventListener('pointerdown',()=>SFX.unlock());
+for(const ev of ['pointerdown','touchend','click']) addEventListener(ev,()=>SFX.unlock());   // iOS only resumes audio from touchend / click
 // every button (and clickable card) gets a click sound; data-sfx picks the variant. Bubbling, so the mute button's own
 // handler has already run: muting is silent and unmuting confirms with a click.
 document.addEventListener('click',e=>{
