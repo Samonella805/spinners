@@ -74,6 +74,34 @@ const KEYMAP = [
   {u:'KeyW',d:'KeyS',l:'KeyA',r:'KeyD'},
   {u:'ArrowUp',d:'ArrowDown',l:'ArrowLeft',r:'ArrowRight'}
 ];
+/* ---------------- gamepads: polled once per frame (pollPads). The first connected pad steers player 1, the second player 2.
+   Left stick (radial deadzone, rescaled so it ramps from 0) or the D-pad; Start pauses; A confirms the end screen. ---------------- */
+const PAD_DEAD = .18;
+const pads = [null,null];          // per player slot: [x,y] steering, or null when no pad is assigned
+const padBtn = [{},{}];            // per slot: last frame's pressed state of the buttons we edge-detect
+function pollPads(){
+  pads[0]=pads[1]=null;
+  let list=[];
+  try{ list=navigator.getGamepads?Array.from(navigator.getGamepads()).filter(p=>p&&p.connected):[]; }catch{ list=[]; }
+  const fired=[];
+  for(let i=0;i<2;i++){
+    const p=list[i]; if(!p){padBtn[i]={}; continue;}
+    const b=k=>!!(p.buttons[k]&&(p.buttons[k].pressed||p.buttons[k].value>.5));
+    let x=p.axes[0]||0, y=p.axes[1]||0; const l=Math.hypot(x,y);
+    if(l<PAD_DEAD){x=0; y=0;} else {const k=Math.min(1,(l-PAD_DEAD)/(1-PAD_DEAD))/l; x*=k; y*=k;}
+    const dx=(b(15)?1:0)-(b(14)?1:0), dy=(b(13)?1:0)-(b(12)?1:0);
+    if(dx||dy){x=dx; y=dy;}
+    pads[i]=[x,y];
+    for(const k of [0,9]){const on=b(k); if(on&&!padBtn[i][k]) fired.push(k); padBtn[i][k]=on;}
+  }
+  return fired;   // buttons newly pressed this frame (any pad): 0 = A, 9 = Start
+}
+// steering from the pad of player slot i ([x,y], length <= 1), or null
+function padInput(i){ return pads[i]; }
+/* ---------------- settings: reduced screen shake (camera only; the simulation never reads it) ---------------- */
+const SHAKE_KEY='spin.reducedShake';
+let reducedShake=false; try{reducedShake=localStorage.getItem(SHAKE_KEY)==='1';}catch{}
+const shakeK=()=>reducedShake?.25:1;
 
 /* ---------------- canvas ---------------- */
 const cv = $('#cv'), ctx = cv.getContext('2d');
@@ -693,7 +721,8 @@ class Fighter{
     if(this.ctrl==='human'){
       const k=KEYMAP[this.idx];
       ix=(keys[k.r]?1:0)-(keys[k.l]?1:0); iy=(keys[k.d]?1:0)-(keys[k.u]?1:0);
-      const tv=touchInput(this.idx); if(tv&&!ix&&!iy){ix=tv[0]; iy=tv[1];}   // a touch stick (touch.js), when no key is held
+      const pv=padInput(this.idx); if(pv&&!ix&&!iy&&(pv[0]||pv[1])){ix=pv[0]; iy=pv[1]; g.keyed=true;}   // a gamepad, when no key is held
+      const tv=touchInput(this.idx); if(tv&&!ix&&!iy){ix=tv[0]; iy=tv[1];}   // a touch stick (touch.js), when no key or pad is held
     } else [ix,iy]=this.ai(dt,g);
     const il=Math.hypot(ix,iy); if(il>1){ix/=il;iy/=il;}
     arenaEnv(g,this,dt);   // the arena sets this.env for this tick (gutters, hot plates...): the same rules for human and CPU
@@ -1704,6 +1733,34 @@ function camKick(g,dx,dy,mag){
   g.kickX+=dx*mag; g.kickY+=dy*mag;
   const l=Math.hypot(g.kickX,g.kickY); if(l>14){g.kickX*=14/l; g.kickY*=14/l;}
 }
+// pre-match versus header, under the 3-2-1: "MONSTER  VS  WHIRL" in the spinners' colours, then "ROUND 2/4 · FOUNDRY" (or just the arena).
+// Only for the opening countdown (a Second Wind restart skips it). Pure overlay, drawn in screen space.
+function drawVersus(c,g){
+  if(g.cd0!==3) return;
+  const a=g.countdown>0?clamp((3-g.countdown)/.3,0,1):clamp(g.fightT/.6,0,1);
+  if(a<=0) return;
+  const F=g.fighters, fs=Math.round(clamp(W/24,15,26)), y=H/2+clamp(H*.15,78,120);
+  const n0=F[0].name.toUpperCase(), n1=F[1].name.toUpperCase(), vs='  VS  ';
+  c.save(); c.globalAlpha=a; c.textBaseline='middle';
+  c.font=`900 italic ${fs}px ui-sans-serif,system-ui`;
+  const w0=c.measureText(n0).width, wv=c.measureText(vs).width, w1=c.measureText(n1).width, tw=w0+wv+w1;
+  const sub=((g.gRound>=0?G_ROUND_NAMES[g.gRound]+'  \u00b7  ':'')+(g.A.name||'').toUpperCase()).split('').join('\u200a');   // hair spaces: letter-spaced caps
+  const SUBF='800 11px ui-sans-serif,system-ui';
+  c.font=SUBF; const sw=c.measureText(sub).width;
+  const pw=Math.max(tw,sw)+44, ph=fs+34;
+  c.fillStyle='rgba(6,6,12,.55)'; c.beginPath();
+  if(c.roundRect) c.roundRect(W/2-pw/2,y-fs/2-10,pw,ph,14); else c.rect(W/2-pw/2,y-fs/2-10,pw,ph);
+  c.fill();
+  c.font=`900 italic ${fs}px ui-sans-serif,system-ui`;
+  c.textAlign='left'; let x=W/2-tw/2;
+  c.fillStyle=F[0].c1; c.fillText(n0,x,y); x+=w0;
+  c.fillStyle='rgba(203,213,225,.7)'; c.fillText(vs,x,y); x+=wv;
+  c.fillStyle=F[1].c1; c.fillText(n1,x,y);
+  c.textAlign='center'; c.font=SUBF;
+  c.fillStyle=g.gRound>=0?'rgba(253,230,138,.95)':'rgba(203,213,225,.8)';
+  c.fillText(sub,W/2,y+fs/2+10);
+  c.restore();
+}
 function renderGame(){
   const g=game; const t=g.time;
   ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -1726,8 +1783,8 @@ function renderGame(){
   }
   camX=loX>hiX?(loX+hiX)/2:clamp(camX,loX,hiX); camY=loY>hiY?(loY+hiY)/2:clamp(camY,loY,hiY);
   const cl=Math.hypot(camX,camY), cm=R*.25; if(cl>cm){camX*=cm/cl; camY*=cm/cl;}
-  const sk=g.shake+(g.hitStop>0?3:0);   // a small tremor while the world is frozen on impact
-  const cx=W/2-camX*s+rand(-1,1)*sk+g.kickX, cy=top+availH/2-camY*s+rand(-1,1)*sk+g.kickY;
+  const shk=shakeK(), sk=(g.shake+(g.hitStop>0?3:0))*shk;   // a small tremor while the world is frozen on impact (Reduced Shake scales all of it)
+  const cx=W/2-camX*s+rand(-1,1)*sk+g.kickX*shk, cy=top+availH/2-camY*s+rand(-1,1)*sk+g.kickY*shk;
   ctx.save(); ctx.translate(cx,cy); ctx.scale(s,s);
   g.A.drawFloor(ctx,t,g);   // the selected arena's floor (Classic: drawArenaFloor)
   if(g.arena.cv&&g.arena.any) ctx.drawImage(g.arena.cv,-FLOOR_HALF,-FLOOR_HALF,FLOOR_HALF*2,FLOOR_HALF*2);   // worn floor panels (cached), under the scorches
@@ -1773,6 +1830,7 @@ function renderGame(){
   }
   // countdown
   ctx.textAlign='center'; ctx.textBaseline='middle';
+  drawVersus(ctx,g);   // matchup header under the countdown (fades out with FIGHT!)
   if(g.countdown>0){
     const n=Math.ceil(g.countdown), frac=g.countdown%1;
     ctx.font='900 120px ui-sans-serif,system-ui'; ctx.fillStyle=`rgba(255,255,255,${.35+.65*frac})`;
@@ -1878,19 +1936,24 @@ function setScreen(name){
   $('#pause').classList.add('hidden');
   $('#end').classList.add('hidden');
   if(name==='select'){activeSlot=0; renderCards();}
+  if(name==='menu') syncMenu();
 }
 function startGame(){
+  if(mode==='gauntlet'&&gauntlet) gauntletRound();   // a restart replays the current round (with the HP you started it on)
   applyDefaults();
   const A=ARENAS[matchArena]||ARENAS[selArena]||ARENAS.classic, sp=R*(A.spawn||.55);
   const f0=new Fighter(DEFS[sel[0].fighter],sel[0],0,-sp,0);
   const f1=new Fighter(DEFS[sel[1].fighter],sel[1],1,sp,0);
+  const gR=mode==='gauntlet'&&gauntlet?gauntlet.round:-1;
+  if(gR>0) applyCarry(f0,gauntlet.carry);
   game={fighters:[f0,f1],parts:[],shake:0,hitStop:0,slowT:0,timeScale:1,dil:1,dilK:0,acc:0,scrape:0,sizzle:0,magnet:0,
-        countdown:3.0,fightT:0,idleT:0,over:false,winner:null,endT:0,endShown:false,paused:false,time:0,camX:0,camY:0,zoomP:0,kickX:0,kickY:0,wobN:0,
+        countdown:3.0,cd0:3,cdN:null,gRound:gR,fightT:0,idleT:0,over:false,winner:null,endT:0,endShown:false,paused:false,time:0,camX:0,camY:0,zoomP:0,kickX:0,kickY:0,wobN:0,
         dying:[],dents:[],vigK:0,arena:newArena(),A,as:A.init?A.init():{},obsGlow:[],
         stats:[newStats(),newStats()],mt:0,nearK:0,finalK:0};
   game.pw=createWorld(game);
   makeProxy(game,f0); makeProxy(game,f1);
   $('#hud0').innerHTML=hudHTML(0,f0); $('#hud1').innerHTML=hudHTML(1,f1);
+  const rb=$('#roundBadge'); rb.classList.toggle('hidden',gR<0); rb.classList.toggle('fin',gR===G_ROUNDS-1); rb.textContent=gR>=0?G_ROUND_NAMES[gR]:'';
   joyClear();
   setScreen('game');
   game.hudH=$('#game').getBoundingClientRect().height;
@@ -1901,20 +1964,31 @@ function showEnd(){
   // Second Wind: lost to the CPU in a one-player match? Offer one opt-in rewarded ad to get back up (once per match)
   const me=g.fighters.find(f=>f.ctrl==='human'), cpu=g.fighters.find(f=>f.ctrl==='cpu');
   $('#eWind').classList.toggle('hidden',!(me&&cpu&&!me.alive&&g.winner===cpu&&!g.secondUsed&&Ads.canReward()));
-  const el=$('#endTitle');
+  const el=$('#endTitle'); el.classList.remove('g-champ');
   if(g.winner){el.textContent=g.winner.name+' WINS'; el.style.color=g.winner.c1; el.style.textShadow=`0 0 40px ${g.winner.c1}`;}
   else {el.textContent='DOUBLE K.O.'; el.style.color='#e2e8f0'; el.style.textShadow='none';}
   $('#endStats').innerHTML=statsHTML(g);
   if(!g.recorded){g.recorded=true; g.progLine=recordResult(g);}   // after a Second Wind the end screen keeps the first result
-  $('#eProg').innerHTML=g.progLine||''; $('#eProg').classList.toggle('hidden',!g.progLine);
-  $('#end').querySelector('p').textContent='K.O.';
+  let line=g.progLine||'', kicker='K.O.', again='REMATCH';
+  if(g.gRound>=0&&gauntlet){
+    const r=gauntletResult(g);
+    kicker=G_ROUND_NAMES[g.gRound]+' \u00b7 K.O.';
+    line=r.line+(line?'<br><span class="text-slate-300/80 font-bold">'+line+'</span>':'');
+    again=r.champ?'NEW GAUNTLET':r.won?'NEXT ROUND \u25b6':'TRY AGAIN';
+    if(r.champ){el.textContent='GAUNTLET CHAMPION!'; el.style.color='#fde68a'; el.style.textShadow='0 0 40px rgba(252,211,77,.8)'; el.classList.add('g-champ');}
+  }
+  $('#eAgain').textContent=again;
+  $('#eProg').innerHTML=line; $('#eProg').classList.toggle('hidden',!line);
+  $('#end').querySelector('p').textContent=kicker;
   $('#end').classList.remove('hidden');
+  if(g.winner&&g.winner.ctrl==='human'&&!g.vicDone){g.vicDone=true; if(SFX.victory) SFX.victory();}   // a human won (or took the whole gauntlet)
 }
 function setPause(p){
   if(state!=='game'||!game||game.over&&game.endShown) return;
   joyClear();
   if(p) Ads.gameplayStop(); else if(game.countdown<=0&&!game.over) Ads.gameplayStart();
   game.paused=p; $('#pause').classList.toggle('hidden',!p);
+  if(p) syncSettings();
 }
 
 // Second Wind (opt-in rewarded ad on the end screen): the KO'd human spinner is rebuilt where it fell with half its HP and plates,
@@ -1930,7 +2004,7 @@ function secondWind(){
   const dc=Math.hypot(f.x,f.y), lim=R*.6; if(dc>lim){f.x*=lim/dc; f.y*=lim/dc;}
   f.vx=f.vy=0; f.spin=f.baseSpin();
   makeProxy(g,f);
-  g.over=false; g.winner=null; g.endShown=false; g.endT=0; g.finalK=0; g.idleT=0; g.slowT=0; g.countdown=1.5;
+  g.over=false; g.winner=null; g.endShown=false; g.endT=0; g.finalK=0; g.idleT=0; g.slowT=0; g.countdown=1.5; g.cd0=1.5; g.cdN=null;
   $('#end').classList.add('hidden');
   for(let i=0;i<40;i++){const a=rand(0,TAU),sp=rand(120,380); addSpark(g,f.x,f.y,Math.cos(a)*sp,Math.sin(a)*sp,rand(.3,.6),Math.random()<.5?'#ffd166':f.c2,rand(1.2,2.6));}
   addRing(g,f.x,f.y,f.r,f.r*5,.6,'#ffd166',5); addText(g,f.x,f.y-f.r-26,'SECOND WIND!','#ffd166',24);
@@ -1951,7 +2025,10 @@ function simTick(g){
   const dt=SIM_DT*g.timeScale;
   updateDilation(g);
   if(g.countdown>0){
-    g.countdown-=SIM_DT; if(g.countdown<=0){g.fightT=.9; Ads.gameplayStart();}
+    g.countdown-=SIM_DT;
+    const cn=g.countdown>0?Math.min(3,Math.ceil(g.countdown)):0;   // countdown audio: one cue per integer (3, 2, 1) and on FIGHT! (0)
+    if(cn!==g.cdN){g.cdN=cn; if(SFX.countdown) SFX.countdown(cn);}
+    if(g.countdown<=0){g.fightT=.9; Ads.gameplayStart();}
     for(const f of g.fighters){f.t+=dt; f.angle+=f.spin*dt;}
   } else {
     g.fightT=Math.max(0,g.fightT-SIM_DT);
@@ -2041,7 +2118,7 @@ function applyDefaults(){
 let mode='1p', cpuRandom=true, matchArena=null;
 let activeSlot=0;   // which slot the next roster pick goes to
 const PICKS_KEY='spin.picks';
-function savePicks(){try{localStorage.setItem(PICKS_KEY,JSON.stringify({p0:sel[0].fighter,p1:sel[1].fighter,cpuRandom,arena:selArena}));}catch{}}
+function savePicks(){try{localStorage.setItem(PICKS_KEY,JSON.stringify({p0:sel[0].fighter,p1:p1Keep||sel[1].fighter,cpuRandom,arena:selArena}));}catch{}}
 function loadPicks(){
   try{const p=JSON.parse(localStorage.getItem(PICKS_KEY)); if(!p) return;
     if(DEFS[p.p0]) sel[0].fighter=p.p0; if(DEFS[p.p1]) sel[1].fighter=p.p1; cpuRandom=p.cpuRandom!==false;
@@ -2068,12 +2145,80 @@ function recordResult(g){
   }
   saveProg(); return line;
 }
+/* ---- GAUNTLET ('gauntlet' mode): a 4-round arcade ladder. You pick your spinner; four different CPU rivals (roughly easier to harder)
+        are met on four different arenas. Winning a round repairs you partly (+45% max HP, half the missing plates) and the damage carries on.
+        Best progress and clears are saved in this browser. Nothing here changes combat: it only picks matchups and starting HP / plates. ---- */
+const G_ROUNDS=4;
+const G_ROUND_NAMES=['ROUND 1/4','ROUND 2/4','SEMIFINAL 3/4','FINAL 4/4'];
+const G_ROUND_SHORT=['ROUND 1','ROUND 2','SEMI','FINAL'];   // ladder labels on narrow screens
+const G_HEAL=.45;
+const G_TIER={whirl:1,monster:1,clockwork:2,eater:2,mama:2,scrapking:3,bigboy:3,paradox:3};   // ladder order only (unknown spinners sit in the middle)
+const GAUNT_KEY='spin.gauntlet';
+let gStats={best:0,clears:0,champs:{}};   // best: most rounds ever cleared in one run (0..4)
+try{const p=JSON.parse(localStorage.getItem(GAUNT_KEY)); if(p) gStats={best:p.best|0,clears:p.clears|0,champs:p.champs||{}};}catch{}
+const saveGStats=()=>{try{localStorage.setItem(GAUNT_KEY,JSON.stringify(gStats));}catch{}};
+let gauntlet=null;   // the current run: {me, opps[4], arenas[4], round 0..3, carry:{hp,parts}|null (your state at the start of this round)}
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]];} return a;};
+function newGauntlet(){
+  const me=sel[0].fighter, pool=shuffle(Object.keys(DEFS).filter(id=>id!==me));
+  while(pool.length<G_ROUNDS) pool.push(pool[(Math.random()*pool.length)|0]||me);   // tiny rosters: repeats are allowed
+  const opps=pool.slice(0,G_ROUNDS).sort((a,b)=>(G_TIER[a]||2)-(G_TIER[b]||2));
+  const ids=ARENA_LIST.map(a=>a.id), first=ids.includes('classic')?'classic':ids[0];
+  const rest=shuffle(ids.filter(id=>id!==first)), arenas=[first];
+  for(let i=1;i<G_ROUNDS;i++) arenas.push(rest.length?rest[(i-1)%rest.length]:first);
+  gauntlet={me,opps,arenas,round:0,carry:null};
+}
+// set up sel / matchArena for the current round (startGame then builds it)
+function gauntletRound(){
+  const G=gauntlet; sel[0].fighter=G.me; sel[1].fighter=G.opps[G.round]; matchArena=G.arenas[G.round];
+}
+// your state going into the next round: partial repair
+function gauntletCarry(f){
+  const hp=Math.min(f.maxHp,Math.max(1,f.hp)+f.maxHp*G_HEAL);
+  const parts=f.parts.map(p=>({alive:p.alive,dmg:p.dmg}));
+  const lost=parts.map((p,i)=>p.alive?-1:i).filter(i=>i>=0);
+  for(let k=0;k<Math.ceil(lost.length/2);k++){const p=parts[lost[k]]; p.alive=true; p.dmg=Math.min(p.dmg,.3);}
+  return {hp:Math.round(hp),parts};
+}
+function applyCarry(f,c){
+  if(!c) return;
+  f.hp=f.hpLag=Math.min(f.maxHp,c.hp);
+  f.parts.forEach((p,i)=>{const q=c.parts[i]; if(q){p.alive=q.alive; p.dmg=q.dmg;}});
+  f._pk=-1;
+}
+// end-of-match bookkeeping for a gauntlet round; returns {won, champ, line} for the end screen. Safe to call again after a Second Wind.
+function gauntletResult(g){
+  const G=gauntlet, me=g.fighters[0], won=g.winner===me;
+  if(won&&!g.gDone){
+    g.gDone=true;
+    const cleared=G.round+1;
+    if(cleared>gStats.best) gStats.best=cleared;
+    if(cleared>=G_ROUNDS){gStats.clears++; gStats.champs[G.me]=true;}
+    saveGStats();
+    if(cleared<G_ROUNDS) G.next=gauntletCarry(me);
+  }
+  if(won&&G.round>=G_ROUNDS-1) return {won,champ:true,line:`&#127942; ${me.name.toUpperCase()} CONQUERED THE GAUNTLET &middot; CLEARS: ${gStats.clears}`};
+  if(won){
+    const nx=G.round+1, nd=DEFS[G.opps[nx]], na=ARENAS[G.arenas[nx]];
+    return {won,champ:false,line:`${G_ROUND_NAMES[G.round]} CLEARED &middot; NEXT: ${nd.name.toUpperCase()} @ ${(na?na.name:'').toUpperCase()} &middot; REPAIRED TO ${Math.round(G.next.hp/me.maxHp*100)}% HP`};
+  }
+  return {won,champ:false,line:`GAUNTLET OVER AT ${G_ROUND_NAMES[G.round]} &middot; BEST: ${gStats.best}/${G_ROUNDS} ROUNDS`};
+}
+function gauntletNext(){
+  const G=gauntlet; if(!G||!G.next) return;
+  G.carry=G.next; G.next=null; G.round++;
+  gauntletRound(); startGame();
+}
+function gauntletFresh(){ newGauntlet(); gauntletRound(); startGame(); }
+function ladderHTML(){
+  return G_ROUND_NAMES.map((n,i)=>`<div class="g-step${i===G_ROUNDS-1?' fin':''}"><b><i class="g-long">${n}</i><i class="g-short">${G_ROUND_SHORT[i]}</i></b><span>${i===0?'Classic warm-up':i===G_ROUNDS-1?'Toughest rival':'Random rival'}</span></div>`).join('');
+}
 // before the first key press of a match on a keyboard device: how to steer. For the first matches ever, also the goal.
 function drawKeyHint(c,g){
   if(!g||g.over||!g.fighters.some(f=>f.ctrl==='human')) return;
   const y=H-Math.max(40,H*.08);
   if(!TOUCH&&!g.keyed){
-    if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].some(k=>keys[k])) g.keyed=true;
+    if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].some(k=>keys[k])||pads.some(p=>p&&(p[0]||p[1]))) g.keyed=true;
     else{
       const a=.55+.35*Math.sin(g.time*4), two=g.fighters.every(f=>f.ctrl==='human');
       c.textAlign='center'; c.textBaseline='middle'; c.font='800 16px ui-sans-serif,system-ui'; c.fillStyle=`rgba(255,255,255,${a})`;
@@ -2086,31 +2231,35 @@ function drawKeyHint(c,g){
     if(W<560){c.fillText('HARD HITS KNOCK THEIR PLATES OFF',W/2,y-26); c.fillText('RAM YOUR RIVAL!',W/2,y-48);} else c.fillText('RAM YOUR RIVAL! HARD HITS KNOCK THEIR PLATES OFF',W/2,y-28);
   }
 }
+let p1Keep=null;   // your saved CPU pick, kept aside while the Gauntlet borrows slot 2 for its rivals
 function setMode(m){
+  if(m==='gauntlet'&&mode!=='gauntlet') p1Keep=sel[1].fighter;
+  else if(m!=='gauntlet'&&p1Keep){sel[1].fighter=p1Keep; p1Keep=null;}
   mode=m; sel[0].ctrl=m==='cpu'?'cpu':'human'; sel[1].ctrl=m==='2p'?'human':'cpu'; activeSlot=0;
   setScreen('select');
 }
-const randomSlot=i=>mode==='1p'&&i===1&&cpuRandom;
+const randomSlot=i=>(mode==='1p'&&cpuRandom||mode==='gauntlet')&&i===1;
 function slotHTML(i){
-  const s=sel[i], d=DEFS[s.fighter], rnd=randomSlot(i), on=activeSlot===i;
-  const who=mode==='1p'?(i?'CPU':'YOU'):mode==='cpu'?'CPU '+(i+1):'PLAYER '+(i+1);
+  const s=sel[i], d=DEFS[s.fighter], rnd=randomSlot(i), on=activeSlot===i, gm=mode==='gauntlet';
+  const who=mode==='1p'?(i?'CPU':'YOU'):gm?(i?'RIVALS':'YOU'):mode==='cpu'?'CPU '+(i+1):'PLAYER '+(i+1);
   const accent=i?'text-sky-300':'text-orange-300';
   const ring=on?(i?'border-sky-400/80 shadow-[0_0_24px_rgba(56,189,248,.3)] bg-sky-400/5':'border-orange-400/80 shadow-[0_0_24px_rgba(251,146,60,.3)] bg-orange-400/5'):'border-white/10 bg-white/5';
-  const hint=on?(mode==='2p'||i===0?'PICKING':'PICK THE CPU'):(mode==='1p'&&i===1?'TAP TO CHOOSE':'TAP TO CHANGE');
+  const hint=gm?(i?'4-ROUND LADDER':'PICKING'):on?(mode==='2p'||i===0?'PICKING':'PICK THE CPU'):(mode==='1p'&&i===1?'TAP TO CHOOSE':'TAP TO CHANGE');
   return `
   <button data-act="slot" data-i="${i}" class="rounded-2xl border ${ring} p-2 md:p-4 flex flex-col items-center gap-1 transition min-w-0">
     <span class="text-[10px] md:text-xs tracking-[.3em] font-black ${accent}">${who}</span>
     <canvas data-prev="${i}" width="200" height="200" class="w-20 h-20 md:w-32 md:h-32 rounded-xl bg-black/30"></canvas>
-    <span class="font-extrabold text-base md:text-xl leading-tight">${rnd?'Random':d.name}</span>
-    <span class="text-[10px] md:text-[11px] text-slate-400 text-center leading-tight">${rnd?'A surprise every match':d.sub}</span>
-    <span class="text-[9px] md:text-[10px] tracking-[.25em] font-bold ${on?accent:'text-slate-500'} mt-1">${hint}</span>
+    <span class="font-extrabold text-base md:text-xl leading-tight">${rnd?(gm?'4 Rivals':'Random'):d.name}</span>
+    <span class="text-[10px] md:text-[11px] text-slate-400 text-center leading-tight">${rnd?(gm?'A new ladder every run':'A surprise every match'):d.sub}</span>
+    <span class="text-[9px] md:text-[10px] tracking-[.25em] font-bold ${on||gm&&i?accent:'text-slate-500'} mt-1">${hint}</span>
   </button>`;
 }
 // roster: one tile per spinner in DEFS. Adding a spinner to DEFS adds a tile, no menu changes needed.
 function rosterHTML(){
+  const gm=mode==='gauntlet';
   const tiles=Object.values(DEFS).map(d=>{
     const picks=[0,1].filter(i=>sel[i].fighter===d.id&&!randomSlot(i));
-    const badges=picks.map(i=>`<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${i?'bg-sky-400 text-black':'bg-orange-400 text-black'}">${mode==='1p'?(i?'CPU':'YOU'):(mode==='cpu'?'C':'P')+(i+1)}</span>`).join('');
+    const badges=picks.map(i=>`<span class="px-1.5 py-0.5 rounded text-[10px] font-black ${i?'bg-sky-400 text-black':'bg-orange-400 text-black'}">${mode==='1p'||gm?(i?'CPU':'YOU'):(mode==='cpu'?'C':'P')+(i+1)}</span>`).join('');
     const ring=picks.includes(activeSlot)?'border-white/70 bg-white/15':picks.length?'border-white/30 bg-white/10':'border-white/10 bg-white/5 hover:bg-white/10';
     return `
     <button data-act="pick" data-v="${d.id}" data-sfx="select" class="relative flex flex-col items-center rounded-2xl border ${ring} p-2 md:p-3 transition hover:scale-[1.03]">
@@ -2118,6 +2267,7 @@ function rosterHTML(){
       <canvas data-roster="${d.id}" width="120" height="120" class="w-14 h-14 md:w-20 md:h-20 rounded-xl bg-black/30"></canvas>
       <div class="mt-1 text-xs md:text-sm font-extrabold">${d.name}</div>
       ${mode==='1p'?`<div class="h-3 md:h-4 text-[9px] md:text-[10px] font-bold tracking-wider text-emerald-300">${prog.beaten[d.id]?'&#10003; BEATEN':''}</div>`:''}
+      ${gm?`<div class="h-3 md:h-4 text-[9px] md:text-[10px] font-bold tracking-wider text-amber-300">${gStats.champs[d.id]?'&#9733; CHAMPION':''}</div>`:''}
     </button>`;
   });
   if(mode==='1p'&&activeSlot===1) tiles.push(`
@@ -2129,13 +2279,21 @@ function rosterHTML(){
 }
 function renderCards(){
   applyDefaults();
-  $('#selTitle').textContent=mode==='1p'?(activeSlot?'PICK THE CPU':'PICK YOUR SPINNER'):mode==='cpu'?'PICK CPU '+(activeSlot+1):'PLAYER '+(activeSlot+1)+', PICK';
+  const gm=mode==='gauntlet';
+  $('#selTitle').textContent=gm?'GAUNTLET: PICK YOUR SPINNER':mode==='1p'?(activeSlot?'PICK THE CPU':'PICK YOUR SPINNER'):mode==='cpu'?'PICK CPU '+(activeSlot+1):'PLAYER '+(activeSlot+1)+', PICK';
   $('#cards').innerHTML=slotHTML(0)+'<span class="text-2xl md:text-4xl font-black italic text-slate-400 px-1">VS</span>'+slotHTML(1);
   const d=DEFS[sel[activeSlot].fighter];
   $('#selDesc').innerHTML=randomSlot(activeSlot)?'Every match, the CPU picks a different spinner.':d.desc;
   $('#roster').innerHTML=rosterHTML();
   const tot=Object.keys(DEFS).length, nb=beatenCount();
-  $('#selProg').innerHTML=mode==='1p'?(nb>=tot?`&#127942; CHAMPION: YOU HAVE BEATEN ALL ${tot} SPINNERS`:`BEAT EVERY SPINNER: ${nb}/${tot}`):'';
+  $('#selProg').innerHTML=gm?`<span class="text-amber-300">BEST RUN: ${gStats.best}/${G_ROUNDS} ROUNDS &middot; CLEARS: ${gStats.clears}</span>`:mode==='1p'?(nb>=tot?`&#127942; CHAMPION: YOU HAVE BEATEN ALL ${tot} SPINNERS`:`BEAT EVERY SPINNER: ${nb}/${tot}`):'';
+  $('#arenas').classList.toggle('hidden',gm); $('#gLadder').classList.toggle('hidden',!gm);
+  $('#arenaLbl').textContent=gm?'THE LADDER':'ARENA';
+  if(gm){
+    $('#gLadder').innerHTML=ladderHTML();
+    $('#arenaDesc').textContent=`Four rivals, four arenas, no breaks. Damage carries over: each win repairs ${Math.round(G_HEAL*100)}% HP and half your lost plates.`;
+    return;
+  }
   $('#arenas').innerHTML=arenaPickHTML()+`
     <button data-act="arena" data-v="random" data-sfx="select" class="flex flex-col items-center justify-center rounded-2xl border ${selArena==='random'?'border-orange-300/80 bg-white/15':'border-white/10 bg-white/5 hover:bg-white/10'} p-2 transition">
       <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl bg-black/30 flex items-center justify-center text-2xl font-black text-slate-300">?</div>
@@ -2147,17 +2305,20 @@ $('#select').addEventListener('click',e=>{
   const b=e.target.closest('[data-act]'); if(!b) return;
   const act=b.dataset.act;
   if(act==='pick'){
-    if(mode==='1p'){
+    if(mode==='gauntlet'){if(b.dataset.v!=='random') sel[0].fighter=b.dataset.v; activeSlot=0;}   // the ladder picks the rivals
+    else if(mode==='1p'){
       if(activeSlot===1){cpuRandom=b.dataset.v==='random'; if(!cpuRandom) sel[1].fighter=b.dataset.v; activeSlot=0;}   // chose the CPU: back to your own pick
       else if(b.dataset.v!=='random') sel[0].fighter=b.dataset.v;
     } else {sel[activeSlot].fighter=b.dataset.v; activeSlot=1-activeSlot;}   // two players or two CPUs: fill this one, then the other
     savePicks(); renderCards();
   }
-  else if(act==='slot'){activeSlot=+b.dataset.i; renderCards();}
+  else if(act==='slot'){activeSlot=mode==='gauntlet'?0:+b.dataset.i; renderCards();}
   else if(act==='arena'){selArena=b.dataset.v; savePicks(); renderCards();}
 });
 // FIGHT from the select screen: settle any random picks for this match (a rematch keeps them)
 function beginMatch(){
+  if(mode==='gauntlet'){gauntletFresh(); return;}   // a new ladder for this spinner
+  gauntlet=null;
   const ids=Object.keys(DEFS);
   if(mode==='1p'&&cpuRandom){const pool=ids.filter(id=>id!==sel[0].fighter); sel[1].fighter=pool[(Math.random()*pool.length)|0];}
   const ars=ARENA_LIST.map(a=>a.id);
@@ -2202,7 +2363,35 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('button,[data-act]');
   if(b) SFX.click(b.dataset.sfx);
 });
-function syncMute(){ $('#btnMute').textContent=SFX.isMuted()?'SND OFF':'SND ON'; }
+function syncMute(){ $('#btnMute').textContent=SFX.isMuted()?'SND OFF':'SND ON'; syncSettings(); }
+/* ---- pause settings: master volume (audio.js stores it) and Reduced Shake (camera only) ---- */
+function getVol(){
+  if(SFX.getVolume) return clamp(+SFX.getVolume()||0,0,1);
+  let v=.7; try{const s=localStorage.getItem('spinarena.vol'); if(s!==null&&!isNaN(parseFloat(s))) v=parseFloat(s);}catch{}
+  return clamp(v,0,1);
+}
+function syncSettings(){
+  const r=$('#pVol'); if(!r) return;
+  const pct=Math.round(getVol()*100);
+  if(document.activeElement!==r) r.value=pct;
+  r.style.setProperty('--v',r.value+'%');
+  $('#pVolV').textContent=SFX.isMuted()?'MUTED':pct+'%';
+  $('#pShake').setAttribute('aria-pressed',reducedShake?'true':'false');
+}
+$('#pVol').addEventListener('input',e=>{
+  const v=clamp((+e.target.value||0)/100,0,1);
+  if(SFX.setVolume) SFX.setVolume(v);
+  if(v>0&&SFX.isMuted()&&SFX.setMuted) SFX.setMuted(false);   // dragging the volume up un-mutes
+  e.target.style.setProperty('--v',e.target.value+'%');
+  $('#btnMute').textContent=SFX.isMuted()?'SND OFF':'SND ON';
+  $('#pVolV').textContent=SFX.isMuted()?'MUTED':Math.round(v*100)+'%';
+});
+$('#pVol').addEventListener('change',()=>{SFX.unlock(); if(SFX.click) SFX.click();});   // a click at the new level as a preview
+$('#pShake').onclick=()=>{
+  reducedShake=!reducedShake;
+  try{localStorage.setItem(SHAKE_KEY,reducedShake?'1':'0');}catch{}
+  syncSettings();
+};
 addEventListener('keydown',e=>{
   keys[e.code]=true; SFX.unlock();
   if(e.code==='KeyM'){SFX.toggleMute(); syncMute();}
@@ -2216,11 +2405,14 @@ addEventListener('blur',()=>{for(const k in keys) keys[k]=false; if(state==='gam
 $('#btnPlay').onclick=()=>{
   let fresh=prog.played===0; try{if(localStorage.getItem(PICKS_KEY)!==null) fresh=false;}catch{}
   if(!fresh){setMode('1p'); return;}
-  mode='1p'; sel[0].ctrl='human'; sel[1].ctrl='cpu'; activeSlot=0; sel[0].fighter='monster'; sel[1].fighter='whirl'; cpuRandom=false; selArena='classic';
+  mode='1p'; p1Keep=null; sel[0].ctrl='human'; sel[1].ctrl='cpu'; activeSlot=0; sel[0].fighter='monster'; sel[1].fighter='whirl'; cpuRandom=false; selArena='classic';
   savePicks(); beginMatch();
 };
 $('#btn2p').onclick=()=>setMode('2p');
 $('#btnWatch').onclick=()=>setMode('cpu');
+$('#btnGauntlet').onclick=()=>setMode('gauntlet');
+function syncMenu(){ $('#gMenuSub').textContent=gStats.clears?`\u2605 CLEARED \u00d7${gStats.clears}`:gStats.best?`BEST: ${gStats.best}/${G_ROUNDS} ROUNDS`:'4-ROUND LADDER'; }
+syncMenu();
 $('#btnHow').onclick=()=>$('#how').classList.toggle('hidden');
 $('#btnBack').onclick=()=>setScreen('menu');
 $('#btnFight').onclick=beginMatch;
@@ -2230,10 +2422,15 @@ syncMute();
 $('#pResume').onclick=()=>setPause(false);
 // leaving a match is a natural break: an ad may play first (Ads decides; nothing happens off Poki), then the next screen
 const afterAd=fn=>()=>Ads.commercial().then(fn);
+// REMATCH, or in the Gauntlet: NEXT ROUND after a win, a fresh ladder after a loss or a full clear
+function endAgain(){
+  if(mode==='gauntlet'&&gauntlet&&game&&game.gRound>=0){ if(gauntlet.next) gauntletNext(); else gauntletFresh(); }
+  else startGame();
+}
 $('#pRestart').onclick=afterAd(startGame);
 $('#pSelect').onclick=afterAd(()=>setScreen('select'));
 $('#pMenu').onclick=afterAd(()=>setScreen('menu'));
-$('#eAgain').onclick=afterAd(startGame);
+$('#eAgain').onclick=afterAd(endAgain);
 $('#eSelect').onclick=afterAd(()=>setScreen('select'));
 $('#eMenu').onclick=afterAd(()=>setScreen('menu'));
 $('#eWind').onclick=()=>Ads.rewarded().then(ok=>{if(ok) secondWind();});
@@ -2245,6 +2442,11 @@ loadPicks(); Ads.loaded();
 let last=performance.now();
 function frame(now){
   const rdt=Math.min(.05,(now-last)/1000); last=now;
+  const fired=pollPads();   // gamepads: steering is read by the fighters; Start pauses / resumes, A confirms the end screen
+  if(fired.length&&state==='game'&&game){
+    if(fired.includes(9)&&!(game.over&&game.endShown)) setPause(!game.paused);
+    else if(fired.includes(0)&&game.endShown&&!$('#end').classList.contains('hidden')) $('#eAgain').click();
+  }
   if(state==='game'&&game){updateGame(rdt); renderGame();}
   else {renderBg(rdt); if(state==='select') renderPreviews(now/1000); SFX.silence();}
   requestAnimationFrame(frame);

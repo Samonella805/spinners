@@ -139,7 +139,7 @@ defineSpinner({
       M.pulse=Math.max(0,M.pulse-dt*1.5); M.dock[0]=Math.max(0,M.dock[0]-dt*2); M.dock[1]=Math.max(0,M.dock[1]-dt*2);
       for(let i=0;i<2;i++){
         const b=M.kids[i];
-        if(!b||!b.alive){M.respawn[i]-=dt; if(M.respawn[i]<=0){M.kids[i]=maNewBaby(this,i); if(g.time>.1) addRing(g,M.kids[i].x,M.kids[i].y,4,30,.3,MA_MARK[i],2);} continue;}
+        if(!b||!b.alive){M.respawn[i]-=dt; if(M.respawn[i]<=0){M.kids[i]=maNewBaby(this,i); if(g.time>.1){addRing(g,M.kids[i].x,M.kids[i].y,4,30,.3,MA_MARK[i],2); if(SFX.babyPop) SFX.babyPop(panAt(M.kids[i].x));}} continue;}
         b.hitCd-=dt; b.hurtCd-=dt; b.flash=Math.max(0,b.flash-dt*5); b.modeT-=dt; b.ang+=(16+b.stk*4)*dt;
         const spd=MA_BABY_SPD+MA_BABY_SPD_STK*b.stk;
         // where to go
@@ -176,7 +176,7 @@ defineSpinner({
             M.dock[i]=1; M.pulse=1;
             addRing(g,b.x,b.y,MA_BABY_R,MA_BABY_R*3,.3,MA_MARK[i],3);
             addText(g,this.x,this.y-this.r-14,'+'+Math.round(MA_DMG_STK*100)+'% x'+this.stacks(),MA_MARK[i],14);
-            SFX.stack(Math.min(4,this.stacks()));
+            if(SFX.babyDock) SFX.babyDock(this.stacks(),panAt(this.x)); else SFX.stack(Math.min(4,this.stacks()));
           } else {const vn=b.vx*nx+b.vy*ny; if(vn<0){b.vx-=1.6*vn*nx; b.vy-=1.6*vn*ny;}}
         }
         // the rival: rams both ways

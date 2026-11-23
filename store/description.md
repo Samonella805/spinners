@@ -43,6 +43,7 @@ Action, Fighting, 2 Player, Arena, Battle, Casual, Physics, Local Multiplayer
 | thumb_800x800.png | 800×800 | Square cover |
 | thumb_800x1200.png | 800×1200 | Portrait cover |
 | shot_1.png … shot_4.png | 1920×1080 | In-game screenshots (four arenas, the last is a KO end screen) |
-| gameplay.mp4 | 1920×1080, 60 fps, no audio | Gameplay trailer, about 24 s |
+| gameplay.mp4 | 1920×1080, 60 fps, no audio | Gameplay trailer, about 21 s |
+| gameplay_portrait.mp4 | 1080×1620 (2:3), 60 fps, no audio | The same trailer for portrait / mobile slots |
 
 Check each portal's current size requirements when uploading. Poki and CrazyGames both resize or crop covers, so keep the title and the action near the middle (these covers already do).

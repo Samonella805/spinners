@@ -598,6 +598,17 @@ const SFX = (() => {
       lfo.connect(depth); depth.connect(sg.gain);
       a.connect(lp); b.connect(lp); lp.connect(sg); sg.connect(mix); n.connect(bp); bp.connect(ng); ng.connect(mix);
       set = (s, t) => { const f = 130 + 260 * s; to(a.frequency, f, t); to(b.frequency, f * 1.015, t); to(lp.frequency, 700 + 2600 * s, t); to(bp.frequency, 1800 + 2600 * s, t); to(lfo.frequency, 9 + 22 * s, t); };
+    } else if (id === 'mama') {       // warm Mother Engine: pulsing dual-octave triangle/sine hum with a gentle piston throb
+      const a = osc('triangle', 110), b = osc('sine', 220.6), lp = filt('lowpass', 620, 1.4), bg = gain(0.45);
+      const am = gain(0.75), lfo = osc('sine', 5.5), depth = gain(0.25);
+      lfo.connect(depth); depth.connect(am.gain);
+      a.connect(lp); b.connect(bg); bg.connect(lp); lp.connect(am); am.connect(mix);
+      set = (s, t) => { const f = 92 + 95 * s; to(a.frequency, f, t); to(b.frequency, f * 2.006, t); to(lp.frequency, 420 + 680 * s, t); to(lfo.frequency, 4 + 7 * s, t); };
+    } else if (id === 'paradox') {    // counter-rotating rings: two opposite-detuned voices creating a metallic phase beat + airy band
+      const a = osc('triangle', 165), b = osc('sine', 169.5), c = osc('sine', 330), lp = filt('lowpass', 1200, 1.8), cg = gain(0.28);
+      const n = nz(), bp = filt('bandpass', 2200, 5), ng = gain(0.18);
+      a.connect(lp); b.connect(lp); c.connect(cg); cg.connect(lp); lp.connect(mix); n.connect(bp); bp.connect(ng); ng.connect(mix);
+      set = (s, t) => { const f = 135 + 170 * s; to(a.frequency, f, t); to(b.frequency, f * 1.028, t); to(c.frequency, f * 1.995, t); to(lp.frequency, 800 + 1800 * s, t); to(bp.frequency, 1600 + 2000 * s, t); };
     } else {                          // eater (and any unknown spinner): a growling saw with a wobble plus churning noise
       const o = osc('sawtooth', 80), lp = filt('lowpass', 450, 3), vib = osc('sine', 6.5), vd = gain(4);
       const n = nz(), nl = filt('lowpass', 260), ng = gain(0.35);
@@ -674,6 +685,80 @@ const SFX = (() => {
       track(o);
     }
   }
+  // Countdown ticks (n = 3, 2, 1) and FIGHT! horn (n = 0)
+  function countdown(n) {
+    if (!ready() || !limit('cd' + n, 180)) return;
+    const t = ctx.currentTime;
+    if (n > 0) {
+      const f = n === 1 ? 660 : n === 2 ? 554 : 494;
+      track(partial(f, t, 0.16, 0.22, bus, 'triangle'));
+      partial(f * 2, t, 0.09, 0.09, bus, 'sine');
+      noise(t, 0.015, 0.12, 'bandpass', 3200, 2.2);
+    } else {
+      track(partial(587.3, t, 0.52, 0.26, bus, 'triangle'));
+      partial(880, t + 0.02, 0.48, 0.22, bus, 'triangle');
+      partial(1174.6, t + 0.04, 0.42, 0.14, bus, 'sine');
+      thump(t, 130, 42, 0.32, 0.65, clip);
+      noise(t, 0.07, 0.25, 'highpass', 2000, 0.8);
+    }
+  }
+  // Brief triumphant metallic chord on match or Gauntlet victory
+  function victory() {
+    if (!ready() || !limit('victory', 800)) return;
+    const t = ctx.currentTime;
+    const notes = [440, 554.4, 659.3, 880];
+    notes.forEach((f, i) => {
+      const o = partial(f, t + i * 0.065, 0.55 - i * 0.05, 0.16, bus, 'triangle');
+      if (i === 0) track(o);
+      partial(f * 2, t + i * 0.065, 0.28, 0.06, bus, 'sine');
+    });
+    thump(t, 110, 48, 0.28, 0.35, clip);
+  }
+  // Mama: baby docking home (stacks 1..6) and baby popping out of the cradle
+  function babyDock(stacks, pan) {
+    if (!ready() || voices > MAX_VOICES || !limit('bdock', 60)) return;
+    const t = ctx.currentTime, out = dest(pan), k = clamp(stacks || 1, 1, 6);
+    const f = 520 * Math.pow(1.12, k - 1);
+    noise(t, 0.02, 0.12, 'bandpass', 3400, 2.5, out);
+    track(partial(f, t, 0.12, 0.16, out, 'triangle'));
+    partial(f * 1.5, t + 0.045, 0.18, 0.14, out, 'sine');
+  }
+  function babyPop(pan) {
+    if (!ready() || voices > MAX_VOICES || !limit('bpop', 120)) return;
+    const t = ctx.currentTime, out = dest(pan);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(280, t); o.frequency.exponentialRampToValueAtTime(760, t + 0.11);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    o.connect(g); g.connect(out || bus); o.start(t); o.stop(t + 0.15); track(o);
+    noise(t, 0.02, 0.09, 'highpass', 3000, 0.9, out);
+  }
+  // Paradox: Reversal state cues ('tell', 'brace', 'absorb', 'release')
+  function reversal(kind, pan) {
+    if (!ready() || voices > MAX_VOICES || !limit('rev_' + kind, 80)) return;
+    const t = ctx.currentTime, out = dest(pan);
+    if (kind === 'tell') {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(420, t); o.frequency.exponentialRampToValueAtTime(920, t + 0.22);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.11, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+      o.connect(g); g.connect(out || bus); o.start(t); o.stop(t + 0.26); track(o);
+    } else if (kind === 'brace') {
+      thump(t, 160, 62, 0.18, 0.35, clip);
+      track(partial(330, t, 0.28, 0.18, out, 'triangle'));
+      partial(495, t, 0.24, 0.12, out, 'sine');
+      noise(t, 0.035, 0.18, 'bandpass', 2400, 1.8, out);
+    } else if (kind === 'absorb') {
+      track(partial(780, t, 0.18, 0.15, out, 'sine'));
+      partial(1170, t + 0.02, 0.16, 0.1, out, 'triangle');
+    } else if (kind === 'release') {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(1100, t + 0.14);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      o.connect(g); g.connect(out || bus); o.start(t); o.stop(t + 0.2); track(o);
+    }
+  }
   function silence() {
     beatNext = 0;
     timeWarp(false);
@@ -696,7 +781,8 @@ const SFX = (() => {
   function setVolume(v) { volume = clamp(v, 0, 1); store.set(KEY_VOL, String(volume)); applyMaster(); }
 
   return {
-    unlock, duck, click, clang, grind, wall, clatter, tink, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, stack, eat, acid, heartbeat, tick, sproing, pop, collapse, bellChime, gearGroan, timeWarp, silence, background, setMuted, setVolume, portalMute,
+    unlock, duck, click, clang, grind, wall, clatter, tink, ricochet, stalemate, chip, debris, shatter, scrape, sizzle, magnet, salvage, polarity, spin, stack, eat, acid, heartbeat, tick, sproing, pop, collapse, bellChime, gearGroan, timeWarp, countdown, victory, babyDock, babyPop, reversal, silence, background, setMuted, setVolume, portalMute,
+    getVolume() { return volume; },
     toggleMute() { setMuted(!muted); },
     isMuted() { return off(); }
   };

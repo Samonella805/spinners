@@ -100,17 +100,17 @@ defineSpinner({
         addRing(g,x,y,6,60+s.store*3,.35,'#ffffff',4); addShock(g,x,y,90+s.store*4,PX_BLUE,.4);
         for(let i=0;i<24;i++){const a=rand(0,TAU),sp=rand(150,420); addSpark(g,x,y,Math.cos(a)*sp,Math.sin(a)*sp,rand(.2,.45),Math.random()<.5?PX_ORANGE:PX_BLUE,rand(1.2,2.6));}
         addText(g,this.x,this.y-this.r-24,'REVERSAL!','#ffffff',18);
-        SFX.ricochet(500+s.store*20,120,0); g.shake=Math.max(g.shake,6);
+        SFX.ricochet(500+s.store*20,120,0); if(SFX.reversal) SFX.reversal('release',panAt(x)); g.shake=Math.max(g.shake,6);
       }
       s.store=0;
     }
     think(dt,g){
       const s=this.px, sync=this.ringK(0)+this.ringK(1)>=1;   // both rings badly hurt: out of sync, Reversal recharges slower
       s.t-=dt;
-      if(s.storeNew>0){s.store=Math.min(PX_STORE_MAX,s.store+s.storeNew); s.storeNew=0; s.keep=PX_KEEP;}
+      if(s.storeNew>0){s.store=Math.min(PX_STORE_MAX,s.store+s.storeNew); s.storeNew=0; s.keep=PX_KEEP; if(SFX.reversal) SFX.reversal('absorb',panAt(this.x));}
       if(s.store>0){s.keep-=dt; if(s.keep<=0) s.store=Math.max(0,s.store-dt*4);}
-      if(s.st==='idle'){s.cd-=dt; if(s.cd<=0){s.st='tell'; s.t=PX_TELL;}}
-      else if(s.st==='tell'){if(s.t<=0){s.st='on'; s.t=PX_ON; this.m=this.m0*PX_MASS; addRing(g,this.x,this.y,this.r,this.r*2,.3,PX_BLUE,3);}}
+      if(s.st==='idle'){s.cd-=dt; if(s.cd<=0){s.st='tell'; s.t=PX_TELL; if(SFX.reversal) SFX.reversal('tell',panAt(this.x));}}
+      else if(s.st==='tell'){if(s.t<=0){s.st='on'; s.t=PX_ON; this.m=this.m0*PX_MASS; addRing(g,this.x,this.y,this.r,this.r*2,.3,PX_BLUE,3); if(SFX.reversal) SFX.reversal('brace',panAt(this.x));}}
       else if(s.st==='on'&&s.t<=0){s.st='idle'; s.cd=PX_CD*(sync?1:1.5); this.m=this.m0;}
       // the rings' drawn angles: in Reversal the inner ring whips round and the outer one drags
       const sp=this.spin; s.ia+=sp*(s.st==='on'?2.4:.9)*dt; s.oa-=s.st==='on'?sp*.55*dt:0;

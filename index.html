@@ -7,8 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Spin Arena</title>
-<link rel="stylesheet" href="style.css?v=10">
-<link rel="stylesheet" href="tw.css?v=10">   <!-- pre-built Tailwind (tailwind.config.js); after style.css, where the old CDN injected it, so ties resolve the same way -->
+<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="tw.css?v=11">   <!-- pre-built Tailwind (tailwind.config.js); after style.css, where the old CDN injected it, so ties resolve the same way -->
 </head>
 <body class="text-slate-100 select-none">
 <canvas id="cv" class="fixed inset-0"></canvas>
@@ -18,15 +18,17 @@
   <p class="tracking-[0.5em] text-xs text-orange-300/80 mb-4">PHYSICS BATTLE ARENA</p>
   <h1 class="title-glow text-6xl md:text-8xl font-black italic tracking-tight bg-gradient-to-b from-white to-orange-400 bg-clip-text text-transparent pr-3">SPIN ARENA</h1>
   <p class="mt-5 max-w-md text-slate-300/80">Two tops enter. One leaves in pieces.</p>
-  <div class="mt-10 flex flex-col sm:flex-row gap-3 sm:gap-4 items-stretch w-full max-w-xs sm:max-w-none sm:w-auto">
+  <div class="menu-grid mt-10">
     <button id="btnPlay" data-sfx="start" class="px-12 py-4 rounded-full bg-orange-500 hover:bg-orange-400 text-black font-extrabold text-xl tracking-widest shadow-[0_0_40px_rgba(251,146,60,.5)] transition hover:scale-105">PLAY<span class="block text-[11px] font-bold tracking-[.2em] text-black/60">YOU VS CPU</span></button>
+    <button id="btnGauntlet" data-sfx="start" class="btn-gauntlet px-10 py-4 rounded-full font-extrabold text-xl tracking-widest transition hover:scale-105">GAUNTLET<span id="gMenuSub" class="block text-[11px] font-bold tracking-[.2em]">4-ROUND LADDER</span></button>
     <button id="btn2p" data-sfx="start" class="px-10 py-4 rounded-full bg-white/10 hover:bg-white/20 font-extrabold text-xl tracking-widest transition hover:scale-105">2 PLAYERS<span class="block text-[11px] font-bold tracking-[.2em] text-slate-400">SAME DEVICE</span></button>
     <button id="btnWatch" data-sfx="start" class="px-10 py-4 rounded-full bg-white/10 hover:bg-white/20 font-extrabold text-xl tracking-widest transition hover:scale-105">WATCH<span class="block text-[11px] font-bold tracking-[.2em] text-slate-400">CPU VS CPU</span></button>
   </div>
   <button id="btnHow" class="mt-5 text-sm text-slate-400 hover:text-white underline underline-offset-4">How to play</button>
   <div id="how" class="hidden mt-5 max-w-md text-left text-sm text-slate-300 bg-white/5 border border-white/10 rounded-xl p-4 backdrop-blur">
-    <p>Steer with <kbd class="px-1.5 rounded bg-white/10">W A S D</kbd>, or <b>drag anywhere</b> on a phone. In <b>2 Players</b>, player 2 uses <kbd class="px-1.5 rounded bg-white/10">&#8592; &#8593; &#8595; &#8594;</kbd> (on one phone, each player drags on their own half).</p>
+    <p>Steer with <kbd class="px-1.5 rounded bg-white/10">W A S D</kbd>, or <b>drag anywhere</b> on a phone. In <b>2 Players</b>, player 2 uses <kbd class="px-1.5 rounded bg-white/10">&#8592; &#8593; &#8595; &#8594;</kbd> (on one phone, each player drags on their own half). A gamepad works too: left stick or D-pad, Start to pause.</p>
     <p class="mt-2">Slam into your rival. Harder impacts do more damage. Hits chip parts off, and a spinner missing parts is weaker. Drain their health to shatter them. If nobody takes damage for 5 seconds, every spinner loses 5 HP. Pick an arena: its gutters, obstacles and hazards affect both spinners the same way. Press <kbd class="px-1.5 rounded bg-white/10">P</kbd> to pause, <kbd class="px-1.5 rounded bg-white/10">M</kbd> to mute.</p>
+    <p class="mt-2"><b>Gauntlet</b>: beat four CPU rivals in a row across four arenas. Damage carries over, with a partial repair between rounds.</p>
   </div>
 </section>
 
@@ -42,7 +44,8 @@
     <p id="selDesc" class="text-center text-xs md:text-sm text-slate-300/90 mt-3 max-w-2xl mx-auto min-h-[3rem]"></p>
     <p id="selProg" class="text-center text-[10px] md:text-xs font-bold tracking-[.25em] text-emerald-300/90 mt-1"></p>
     <div id="roster" class="grid grid-cols-4 xl:grid-cols-8 gap-2 md:gap-3 mt-3"></div>
-    <p class="text-center text-xs tracking-[0.3em] text-slate-400 mt-6 mb-2">ARENA</p>
+    <p id="arenaLbl" class="text-center text-xs tracking-[0.3em] text-slate-400 mt-6 mb-2">ARENA</p>
+    <div id="gLadder" class="g-ladder hidden"></div>
     <div id="arenas" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
     <p id="arenaDesc" class="text-center text-sm text-slate-300/80 mt-3 max-w-2xl mx-auto min-h-[2.5rem]"></p>
     <div class="sticky bottom-0 text-center mt-5 md:mt-7 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#07070d] via-[#07070d]/90 to-transparent">
@@ -55,9 +58,12 @@
 <section id="game" class="hidden fixed inset-x-0 top-0 pointer-events-none">
   <div class="hud-bar flex items-start justify-between gap-2 md:gap-3 p-3 md:p-4">
     <div id="hud0" class="w-[42%] max-w-sm"></div>
-    <div class="hud-btns mt-1 flex gap-2 shrink-0">
-      <button id="btnMute" class="pointer-events-auto whitespace-nowrap px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold tracking-widest">SND ON</button>
-      <button id="btnPause" class="pointer-events-auto whitespace-nowrap px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold tracking-widest">MENU</button>
+    <div class="hud-mid">
+      <div class="hud-btns mt-1 flex gap-2 shrink-0">
+        <button id="btnMute" class="pointer-events-auto whitespace-nowrap px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold tracking-widest">SND ON</button>
+        <button id="btnPause" class="pointer-events-auto whitespace-nowrap px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold tracking-widest">MENU</button>
+      </div>
+      <div id="roundBadge" class="round-badge hidden"></div>
     </div>
     <div id="hud1" class="w-[42%] max-w-sm"></div>
   </div>
@@ -70,6 +76,11 @@
   <button id="pRestart" data-sfx="start" class="w-56 py-3 rounded-full bg-white/10 hover:bg-white/20 font-bold tracking-widest">RESTART</button>
   <button id="pSelect" data-sfx="back" class="w-56 py-3 rounded-full bg-white/10 hover:bg-white/20 font-bold tracking-widest">SPINNERS</button>
   <button id="pMenu" data-sfx="back" class="w-56 py-3 rounded-full bg-white/10 hover:bg-white/20 font-bold tracking-widest">MAIN MENU</button>
+  <div class="p-settings">
+    <label class="p-row" for="pVol"><span>VOLUME</span><span id="pVolV" class="p-val">70%</span></label>
+    <input id="pVol" type="range" min="0" max="100" step="1" value="70" class="p-range" aria-label="Master volume">
+    <button id="pShake" type="button" class="p-row p-toggle" aria-pressed="false"><span>REDUCED SHAKE</span><span class="p-switch"><i></i></span></button>
+  </div>
 </section>
 
 <!-- ============ END ============ -->
@@ -87,24 +98,24 @@
 </section>
 
 <!-- Classic scripts (not ES modules) so the game also runs from file://. ?v=N: bump N on every deploy so browsers never mix cached old files with new ones -->
-<script src="vendor/matter.min.js?v=10"></script>   <!-- Matter.js 0.19.0, bundled -->
-<script src="core.js?v=10"></script>
+<script src="vendor/matter.min.js?v=11"></script>   <!-- Matter.js 0.19.0, bundled -->
+<script src="core.js?v=11"></script>
 <!-- ad breaks (Poki SDK on Poki only; ?adtest shows fake ads anywhere) -->
-<script src="ads.js?v=10"></script>
+<script src="ads.js?v=11"></script>
 <!-- one file per spinner; each registers itself with defineSpinner(). Add a new spinner by adding its file here. -->
-<script src="spinners/bigboy.js?v=10"></script>
-<script src="spinners/whirl.js?v=10"></script>
-<script src="spinners/clockwork.js?v=10"></script>
-<script src="spinners/scrapking.js?v=10"></script>
-<script src="spinners/eater.js?v=10"></script>
-<script src="spinners/monster.js?v=10"></script>
-<script src="spinners/mama.js?v=10"></script>
-<script src="spinners/paradox.js?v=10"></script>
-<script src="audio.js?v=10"></script>
-<script src="game.js?v=10"></script>
+<script src="spinners/bigboy.js?v=11"></script>
+<script src="spinners/whirl.js?v=11"></script>
+<script src="spinners/clockwork.js?v=11"></script>
+<script src="spinners/scrapking.js?v=11"></script>
+<script src="spinners/eater.js?v=11"></script>
+<script src="spinners/monster.js?v=11"></script>
+<script src="spinners/mama.js?v=11"></script>
+<script src="spinners/paradox.js?v=11"></script>
+<script src="audio.js?v=11"></script>
+<script src="game.js?v=11"></script>
 <!-- arenas register after game.js (they use its constants); add an arena by calling defineArena() in arenas.js -->
-<script src="arenas.js?v=10"></script>
+<script src="arenas.js?v=11"></script>
 <!-- touch sticks for phones and tablets, and pausing when the page goes to the background -->
-<script src="touch.js?v=10"></script>
+<script src="touch.js?v=11"></script>
 </body>
 </html>
