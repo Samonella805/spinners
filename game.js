@@ -1737,14 +1737,14 @@ function camKick(g,dx,dy,mag){
 // Only for the opening countdown (a Second Wind restart skips it). Pure overlay, drawn in screen space.
 function drawVersus(c,g){
   if(g.cd0!==3) return;
-  const a=g.countdown>0?clamp((3-g.countdown)/.3,0,1):clamp(g.fightT/.6,0,1);
+  const a=g.waiting?1:g.countdown>0?clamp((3-g.countdown)/.3,0,1):clamp(g.fightT/.6,0,1);
   if(a<=0) return;
   const F=g.fighters, fs=Math.round(clamp(W/24,15,26)), y=H/2+clamp(H*.15,78,120);
   const n0=F[0].name.toUpperCase(), n1=F[1].name.toUpperCase(), vs='  VS  ';
   c.save(); c.globalAlpha=a; c.textBaseline='middle';
   c.font=`900 italic ${fs}px ui-sans-serif,system-ui`;
   const w0=c.measureText(n0).width, wv=c.measureText(vs).width, w1=c.measureText(n1).width, tw=w0+wv+w1;
-  const sub=((g.gRound>=0?G_ROUND_NAMES[g.gRound]+'  \u00b7  ':'')+(g.A.name||'').toUpperCase()).split('').join('\u200a');   // hair spaces: letter-spaced caps
+  const sub=((g.gRound>=0?G_ROUND_NAMES[g.gRound]+'  \u00b7  ':g.daily?'DAILY CHALLENGE  \u00b7  ':'')+(g.A.name||'').toUpperCase()).split('').join('\u200a');   // hair spaces: letter-spaced caps
   const SUBF='800 11px ui-sans-serif,system-ui';
   c.font=SUBF; const sw=c.measureText(sub).width;
   const pw=Math.max(tw,sw)+44, ph=fs+34;
@@ -1831,7 +1831,13 @@ function renderGame(){
   // countdown
   ctx.textAlign='center'; ctx.textBaseline='middle';
   drawVersus(ctx,g);   // matchup header under the countdown (fades out with FIGHT!)
-  if(g.countdown>0){
+  if(g.waiting){   // first match ever: the arena is live behind a "start" prompt
+    const a=.7+.3*Math.sin(g.time*4), fs=Math.round(clamp(W/16,24,48));
+    ctx.font=`900 italic ${fs}px ui-sans-serif,system-ui`; ctx.fillStyle=`rgba(255,170,80,${a})`;
+    ctx.fillText(TOUCH?'DRAG TO PLAY':'PRESS W A S D TO PLAY',W/2,H/2-fs*.2);
+    ctx.font='800 14px ui-sans-serif,system-ui'; ctx.fillStyle='rgba(226,232,240,.8)';
+    ctx.fillText(TOUCH?'YOUR THUMB STEERS YOUR SPINNER':'OR CLICK ANYWHERE',W/2,H/2+fs*.6);
+  } else if(g.countdown>0){
     const n=Math.ceil(g.countdown), frac=g.countdown%1;
     ctx.font='900 120px ui-sans-serif,system-ui'; ctx.fillStyle=`rgba(255,255,255,${.35+.65*frac})`;
     ctx.save(); ctx.translate(W/2,H/2); ctx.scale(.8+frac*.4,.8+frac*.4); ctx.fillText(n>3?3:n,0,0); ctx.restore();
@@ -1930,6 +1936,8 @@ function show(id){
 function setScreen(name){
   state=name;
   if(name!=='game') Ads.gameplayStop();
+  if(name!=='game'&&daily) dailyEnd();   // leaving the daily gives your own picks back
+  $('#menuNote').classList.add('hidden');   // (a one-off line, see menuNote)
   $('#menu').classList.toggle('hidden',name!=='menu');
   $('#select').classList.toggle('hidden',name!=='select');
   $('#game').classList.toggle('hidden',name!=='game');
@@ -1938,28 +1946,42 @@ function setScreen(name){
   if(name==='select'){activeSlot=0; renderCards();}
   if(name==='menu') syncMenu();
 }
+function menuNote(t){ const n=$('#menuNote'); n.textContent=t; n.classList.remove('hidden'); }   // shown until the menu is left
 function startGame(){
-  if(mode==='gauntlet'&&gauntlet) gauntletRound();   // a restart replays the current round (with the HP you started it on)
+  if(mode==='gauntlet'&&gauntlet) gauntletRound();   // a restart replays the current round
+  if(daily){sel[0].fighter=daily.p0; sel[1].fighter=daily.p1; matchArena=daily.arena;}
   applyDefaults();
   const A=ARENAS[matchArena]||ARENAS[selArena]||ARENAS.classic, sp=R*(A.spawn||.55);
   const f0=new Fighter(DEFS[sel[0].fighter],sel[0],0,-sp,0);
   const f1=new Fighter(DEFS[sel[1].fighter],sel[1],1,sp,0);
   const gR=mode==='gauntlet'&&gauntlet?gauntlet.round:-1;
-  if(gR>0) applyCarry(f0,gauntlet.carry);
+  if(gR>=0&&G_RIVAL_HP[gR]){f1.maxHp=Math.round(f1.maxHp*(1+G_RIVAL_HP[gR])); f1.hp=f1.hpLag=f1.maxHp;}   // gauntlet rivals get tougher
+  if(daily){f1.maxHp=Math.round(f1.maxHp*DAILY_BOSS); f1.hp=f1.hpLag=f1.maxHp;}   // the daily rival is a tougher version
   game={fighters:[f0,f1],parts:[],shake:0,hitStop:0,slowT:0,timeScale:1,dil:1,dilK:0,acc:0,scrape:0,sizzle:0,magnet:0,
         countdown:3.0,cd0:3,cdN:null,gRound:gR,fightT:0,idleT:0,over:false,winner:null,endT:0,endShown:false,paused:false,time:0,camX:0,camY:0,zoomP:0,kickX:0,kickY:0,wobN:0,
         dying:[],dents:[],vigK:0,arena:newArena(),A,as:A.init?A.init():{},obsGlow:[],
-        stats:[newStats(),newStats()],mt:0,nearK:0,finalK:0};
+        stats:[newStats(),newStats()],mt:0,nearK:0,finalK:0,daily:!!daily};
+  game.tut=mode==='1p'&&!daily&&gR<0&&prog.played===0&&f0.id==='monster'&&f0.ctrl==='human'&&f1.ctrl==='cpu'?{step:0,top:0,t:0}:null;   // first match ever
   game.pw=createWorld(game);
   makeProxy(game,f0); makeProxy(game,f1);
   $('#hud0').innerHTML=hudHTML(0,f0); $('#hud1').innerHTML=hudHTML(1,f1);
-  const rb=$('#roundBadge'); rb.classList.toggle('hidden',gR<0); rb.classList.toggle('fin',gR===G_ROUNDS-1); rb.textContent=gR>=0?G_ROUND_NAMES[gR]:'';
+  const rb=$('#roundBadge'); rb.classList.toggle('hidden',gR<0&&!daily); rb.classList.toggle('fin',gR===G_ROUNDS-1); rb.classList.toggle('daily',!!daily);
+  rb.textContent=gR>=0?G_ROUND_NAMES[gR]:daily?'DAILY CHALLENGE':'';
   joyClear();
   setScreen('game');
   game.hudH=$('#game').getBoundingClientRect().height;
 }
 function showEnd(){
   const g=game; g.endShown=true;
+  if(g.tut){   // the tutorial match ends on the main menu, so a new player sees every mode (2 Players, Gauntlet, Daily...) right away
+    Ads.gameplayStop();
+    if(!g.recorded){g.recorded=true; recordResult(g);}
+    const won=g.winner===g.fighters[0], rival=g.fighters[1].name.toUpperCase();
+    if(won&&SFX.victory) SFX.victory();
+    setScreen('menu');
+    menuNote(won?`★ YOU BEAT ${rival}! PICK A MODE`:`${rival} WON THIS TIME. PICK A MODE`);
+    return;
+  }
   Ads.gameplayStop();
   // Second Wind: lost to the CPU in a one-player match? Offer one opt-in rewarded ad to get back up (once per match)
   const me=g.fighters.find(f=>f.ctrl==='human'), cpu=g.fighters.find(f=>f.ctrl==='cpu');
@@ -1974,8 +1996,13 @@ function showEnd(){
     const r=gauntletResult(g);
     kicker=G_ROUND_NAMES[g.gRound]+' \u00b7 K.O.';
     line=r.line+(line?'<br><span class="text-slate-300/80 font-bold">'+line+'</span>':'');
-    again=r.champ?'NEW GAUNTLET':r.won?'NEXT ROUND \u25b6':'TRY AGAIN';
+    again=r.champ?'NEW GAUNTLET':r.won?'NEXT ROUND \u25b6':r.retry?'RETRY ROUND':'NEW GAUNTLET';
     if(r.champ){el.textContent='GAUNTLET CHAMPION!'; el.style.color='#fde68a'; el.style.textShadow='0 0 40px rgba(252,211,77,.8)'; el.classList.add('g-champ');}
+  } else if(g.daily&&daily){
+    const r=dailyResult(g);
+    kicker='DAILY CHALLENGE · K.O.';
+    line=r.line+(line?'<br><span class="text-slate-300/80 font-bold">'+line+'</span>':'');
+    again=r.won?'REMATCH':'TRY AGAIN';
   }
   $('#eAgain').textContent=again;
   $('#eProg').innerHTML=line; $('#eProg').classList.toggle('hidden',!line);
@@ -2025,10 +2052,12 @@ function simTick(g){
   const dt=SIM_DT*g.timeScale;
   updateDilation(g);
   if(g.countdown>0){
-    g.countdown-=SIM_DT;
-    const cn=g.countdown>0?Math.min(3,Math.ceil(g.countdown)):0;   // countdown audio: one cue per integer (3, 2, 1) and on FIGHT! (0)
-    if(cn!==g.cdN){g.cdN=cn; if(SFX.countdown) SFX.countdown(cn);}
-    if(g.countdown<=0){g.fightT=.9; Ads.gameplayStart();}
+    if(!g.waiting){   // a new player's first match holds here until their first touch / key (see goLive)
+      g.countdown-=SIM_DT;
+      const cn=g.countdown>0?Math.min(3,Math.ceil(g.countdown)):0;   // countdown audio: one cue per integer (3, 2, 1) and on FIGHT! (0)
+      if(cn!==g.cdN){g.cdN=cn; if(SFX.countdown) SFX.countdown(cn);}
+      if(g.countdown<=0){g.fightT=.9; Ads.gameplayStart();}
+    }
     for(const f of g.fighters){f.t+=dt; f.angle+=f.spin*dt;}
   } else {
     g.fightT=Math.max(0,g.fightT-SIM_DT);
@@ -2146,18 +2175,20 @@ function recordResult(g){
   saveProg(); return line;
 }
 /* ---- GAUNTLET ('gauntlet' mode): a 4-round arcade ladder. You pick your spinner; four different CPU rivals (roughly easier to harder)
-        are met on four different arenas. Winning a round repairs you partly (+45% max HP, half the missing plates) and the damage carries on.
-        Best progress and clears are saved in this browser. Nothing here changes combat: it only picks matchups and starting HP / plates. ---- */
+        are met on four different arenas, and each rival has more HP than the last (G_RIVAL_HP). You start every round fully repaired.
+        A lost round can be retried once per run (G_RETRIES); after that the run is over. Best progress and clears are saved in this browser.
+        (Damage used to carry over between rounds; simulated CPU runs showed that made round 2 a cliff: 50% -> 17% win rate.) ---- */
 const G_ROUNDS=4;
 const G_ROUND_NAMES=['ROUND 1/4','ROUND 2/4','SEMIFINAL 3/4','FINAL 4/4'];
 const G_ROUND_SHORT=['ROUND 1','ROUND 2','SEMI','FINAL'];   // ladder labels on narrow screens
-const G_HEAL=.45;
+const G_RIVAL_HP=[0,.1,.2,.3];   // extra max HP for each round's rival
+const G_RETRIES=1;
 const G_TIER={whirl:1,monster:1,clockwork:2,eater:2,mama:2,scrapking:3,bigboy:3,paradox:3};   // ladder order only (unknown spinners sit in the middle)
 const GAUNT_KEY='spin.gauntlet';
 let gStats={best:0,clears:0,champs:{}};   // best: most rounds ever cleared in one run (0..4)
 try{const p=JSON.parse(localStorage.getItem(GAUNT_KEY)); if(p) gStats={best:p.best|0,clears:p.clears|0,champs:p.champs||{}};}catch{}
 const saveGStats=()=>{try{localStorage.setItem(GAUNT_KEY,JSON.stringify(gStats));}catch{}};
-let gauntlet=null;   // the current run: {me, opps[4], arenas[4], round 0..3, carry:{hp,parts}|null (your state at the start of this round)}
+let gauntlet=null;   // the current run: {me, opps[4], arenas[4], round 0..3, retries left, next: won this round, lost: lost this round}
 const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]];} return a;};
 function newGauntlet(){
   const me=sel[0].fighter, pool=shuffle(Object.keys(DEFS).filter(id=>id!==me));
@@ -2166,58 +2197,101 @@ function newGauntlet(){
   const ids=ARENA_LIST.map(a=>a.id), first=ids.includes('classic')?'classic':ids[0];
   const rest=shuffle(ids.filter(id=>id!==first)), arenas=[first];
   for(let i=1;i<G_ROUNDS;i++) arenas.push(rest.length?rest[(i-1)%rest.length]:first);
-  gauntlet={me,opps,arenas,round:0,carry:null};
+  gauntlet={me,opps,arenas,round:0,retries:G_RETRIES,next:false,lost:false};
 }
 // set up sel / matchArena for the current round (startGame then builds it)
 function gauntletRound(){
   const G=gauntlet; sel[0].fighter=G.me; sel[1].fighter=G.opps[G.round]; matchArena=G.arenas[G.round];
 }
-// your state going into the next round: partial repair
-function gauntletCarry(f){
-  const hp=Math.min(f.maxHp,Math.max(1,f.hp)+f.maxHp*G_HEAL);
-  const parts=f.parts.map(p=>({alive:p.alive,dmg:p.dmg}));
-  const lost=parts.map((p,i)=>p.alive?-1:i).filter(i=>i>=0);
-  for(let k=0;k<Math.ceil(lost.length/2);k++){const p=parts[lost[k]]; p.alive=true; p.dmg=Math.min(p.dmg,.3);}
-  return {hp:Math.round(hp),parts};
+// the ladder as four marks for the end screen: won rounds, the one just lost, the ones still ahead
+function ladderPips(round,won){
+  return Array.from({length:G_ROUNDS},(_,i)=>i<round||i===round&&won?'<span style="color:#fcd34d">&#9733;</span>'
+    :i===round?'<span style="color:#f87171">&#10007;</span>':'<span style="color:#64748b">&#9675;</span>').join('&ensp;');
 }
-function applyCarry(f,c){
-  if(!c) return;
-  f.hp=f.hpLag=Math.min(f.maxHp,c.hp);
-  f.parts.forEach((p,i)=>{const q=c.parts[i]; if(q){p.alive=q.alive; p.dmg=q.dmg;}});
-  f._pk=-1;
-}
-// end-of-match bookkeeping for a gauntlet round; returns {won, champ, line} for the end screen. Safe to call again after a Second Wind.
+// end-of-match bookkeeping for a gauntlet round; returns {won, champ, retry, line} for the end screen. Safe to call again after a Second Wind.
 function gauntletResult(g){
-  const G=gauntlet, me=g.fighters[0], won=g.winner===me;
+  const G=gauntlet, me=g.fighters[0], won=g.winner===me, pips='<span class="text-lg">'+ladderPips(G.round,won)+'</span><br>';
+  G.lost=!won;
   if(won&&!g.gDone){
     g.gDone=true;
     const cleared=G.round+1;
     if(cleared>gStats.best) gStats.best=cleared;
     if(cleared>=G_ROUNDS){gStats.clears++; gStats.champs[G.me]=true;}
     saveGStats();
-    if(cleared<G_ROUNDS) G.next=gauntletCarry(me);
+    G.next=cleared<G_ROUNDS;
   }
-  if(won&&G.round>=G_ROUNDS-1) return {won,champ:true,line:`&#127942; ${me.name.toUpperCase()} CONQUERED THE GAUNTLET &middot; CLEARS: ${gStats.clears}`};
+  if(won&&G.round>=G_ROUNDS-1) return {won,champ:true,line:`${pips}&#127942; ${me.name.toUpperCase()} CONQUERED THE GAUNTLET &middot; CLEARS: ${gStats.clears}`};
   if(won){
     const nx=G.round+1, nd=DEFS[G.opps[nx]], na=ARENAS[G.arenas[nx]];
-    return {won,champ:false,line:`${G_ROUND_NAMES[G.round]} CLEARED &middot; NEXT: ${nd.name.toUpperCase()} @ ${(na?na.name:'').toUpperCase()} &middot; REPAIRED TO ${Math.round(G.next.hp/me.maxHp*100)}% HP`};
+    return {won,champ:false,line:`${pips}NEXT: ${nd.name.toUpperCase()} @ ${(na?na.name:'').toUpperCase()} &middot; RIVAL +${Math.round(G_RIVAL_HP[nx]*100)}% HP`};
   }
-  return {won,champ:false,line:`GAUNTLET OVER AT ${G_ROUND_NAMES[G.round]} &middot; BEST: ${gStats.best}/${G_ROUNDS} ROUNDS`};
+  if(G.retries>0) return {won,champ:false,retry:true,line:`${pips}KNOCKED OUT IN ${G_ROUND_NAMES[G.round]} &middot; ${G.retries} RETRY LEFT`};
+  return {won,champ:false,line:`${pips}GAUNTLET OVER AT ${G_ROUND_NAMES[G.round]} &middot; BEST: ${gStats.best}/${G_ROUNDS} ROUNDS`};
 }
 function gauntletNext(){
   const G=gauntlet; if(!G||!G.next) return;
-  G.carry=G.next; G.next=null; G.round++;
+  G.next=false; G.lost=false; G.round++;
   gauntletRound(); startGame();
 }
+function gauntletRetry(){ const G=gauntlet; G.retries--; G.lost=false; gauntletRound(); startGame(); }
 function gauntletFresh(){ newGauntlet(); gauntletRound(); startGame(); }
+/* ---- DAILY CHALLENGE: one fixed matchup per calendar day (the same for everyone on that date): you play a given spinner against a
+        tougher CPU rival (+25% HP) on a given arena. Beating it on consecutive days builds a streak. Saved in this browser. ---- */
+const DAILY_KEY='spin.daily', DAILY_BOSS=1.25;
+let dStats={last:'',streak:0,best:0,wins:0};   // last: the most recent day key beaten
+try{const p=JSON.parse(localStorage.getItem(DAILY_KEY)); if(p) dStats={last:String(p.last||''),streak:p.streak|0,best:p.best|0,wins:p.wins|0};}catch{}
+const saveDStats=()=>{try{localStorage.setItem(DAILY_KEY,JSON.stringify(dStats));}catch{}};
+const dayKey=(d=new Date())=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const dayBefore=k=>{const d=new Date(k+'T12:00:00'); d.setDate(d.getDate()-1); return dayKey(d);};
+const dailyDone=()=>dStats.last===dayKey();
+const dailyStreak=()=>dStats.last===dayKey()||dStats.last===dayBefore(dayKey())?dStats.streak:0;   // a missed day breaks it
+function untilTomorrow(){
+  const n=new Date(), m=new Date(n.getFullYear(),n.getMonth(),n.getDate()+1), s=Math.max(60,(m-n)/1000|0);
+  const h=s/3600|0, mi=(s%3600)/60|0; return h?`${h}H ${mi}M`:`${mi}M`;
+}
+let daily=null, dailyKeep=null;   // today's challenge while it is being played, and your own picks kept aside meanwhile
+function dailyFor(key){
+  let h=2166136261>>>0; for(const ch of key){h^=ch.charCodeAt(0); h=Math.imul(h,16777619)>>>0;}
+  const rnd=()=>{h^=h<<13; h>>>=0; h^=h>>>17; h^=h<<5; h>>>=0; return h/4294967296;};
+  rnd(); rnd();
+  const ids=Object.keys(DEFS).sort(), p0=ids[(rnd()*ids.length)|0], rest=ids.filter(i=>i!==p0), p1=rest.length?rest[(rnd()*rest.length)|0]:p0;
+  const ars=ARENA_LIST.map(a=>a.id).sort();
+  return {key,p0,p1,arena:ars[(rnd()*ars.length)|0]};
+}
+function startDaily(){
+  if(p1Keep){sel[1].fighter=p1Keep; p1Keep=null;}
+  dailyKeep={p0:sel[0].fighter,p1:sel[1].fighter};
+  mode='1p'; gauntlet=null; sel[0].ctrl='human'; sel[1].ctrl='cpu'; activeSlot=0;
+  daily=dailyFor(dayKey());
+  startGame();
+}
+function dailyEnd(){
+  if(dailyKeep){sel[0].fighter=dailyKeep.p0; sel[1].fighter=dailyKeep.p1;}
+  daily=null; dailyKeep=null; matchArena=null;
+}
+// end-of-match bookkeeping for the daily; returns {won, line}. Safe to call again after a Second Wind.
+function dailyResult(g){
+  const won=g.winner===g.fighters[0];
+  if(won&&!g.dDone){
+    g.dDone=true;
+    if(dStats.last!==daily.key){
+      dStats.streak=dStats.last===dayBefore(daily.key)?dStats.streak+1:1;
+      dStats.last=daily.key; dStats.best=Math.max(dStats.best,dStats.streak); dStats.wins++; saveDStats();
+      g.dFirst=true;
+    }
+  }
+  const st=dailyStreak(), next=`<br><span class="text-sky-300">NEXT DAILY IN ${untilTomorrow()}</span>`;
+  if(won) return {won,line:(g.dFirst?`&#9733; DAILY BEATEN! STREAK: ${st}`:`DAILY DONE &middot; STREAK: ${st}`)+next};
+  return {won,line:`<span class="text-sky-300">THE DAILY RIVAL HAS +${Math.round((DAILY_BOSS-1)*100)}% HP &middot; TRY AGAIN!</span>`};
+}
 function ladderHTML(){
-  return G_ROUND_NAMES.map((n,i)=>`<div class="g-step${i===G_ROUNDS-1?' fin':''}"><b><i class="g-long">${n}</i><i class="g-short">${G_ROUND_SHORT[i]}</i></b><span>${i===0?'Classic warm-up':i===G_ROUNDS-1?'Toughest rival':'Random rival'}</span></div>`).join('');
+  return G_ROUND_NAMES.map((n,i)=>`<div class="g-step${i===G_ROUNDS-1?' fin':''}"><b><i class="g-long">${n}</i><i class="g-short">${G_ROUND_SHORT[i]}</i></b><span>${i===0?'Classic warm-up':`${i===G_ROUNDS-1?'Boss':'Rival'} +${Math.round(G_RIVAL_HP[i]*100)}% HP`}</span></div>`).join('');
 }
 // before the first key press of a match on a keyboard device: how to steer. For the first matches ever, also the goal.
 function drawKeyHint(c,g){
   if(!g||g.over||!g.fighters.some(f=>f.ctrl==='human')) return;
   const y=H-Math.max(40,H*.08);
-  if(!TOUCH&&!g.keyed){
+  if(!TOUCH&&!g.keyed&&!g.waiting){   // (while a first match waits, its own prompt says this)
     if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].some(k=>keys[k])||pads.some(p=>p&&(p[0]||p[1]))) g.keyed=true;
     else{
       const a=.55+.35*Math.sin(g.time*4), two=g.fighters.every(f=>f.ctrl==='human');
@@ -2225,11 +2299,44 @@ function drawKeyHint(c,g){
       c.fillText(two?'PLAYER 1: W A S D   \u00b7   PLAYER 2: ARROW KEYS':'STEER WITH W A S D',W/2,y);
     }
   }
-  if(prog.played<3&&g.mt<9){   // a new player's first matches: what the point is
+  if(g.tut) drawTutorial(c,g,y);   // the very first match (as Monster): a step-by-step lesson instead
+  else if(prog.played<3&&g.mt<9){   // a new player's first matches: what the point is
     const a=clamp(Math.min(g.mt+3,9-g.mt)/1.2,0,1)*.9;
     c.textAlign='center'; c.textBaseline='middle'; c.font='800 15px ui-sans-serif,system-ui'; c.fillStyle=`rgba(255,200,140,${a})`;
     if(W<560){c.fillText('HARD HITS KNOCK THEIR PLATES OFF',W/2,y-26); c.fillText('RAM YOUR RIVAL!',W/2,y-48);} else c.fillText('RAM YOUR RIVAL! HARD HITS KNOCK THEIR PLATES OFF',W/2,y-28);
   }
+}
+// First-match tutorial for Monster, driven by what the player actually does: bounce off the wall (a Ricochet stack), bounce again,
+// then ram Whirl to spend the stacks on a smash. Each step waits for the player; the lesson ends a few seconds after the first smash.
+const TUT_STEPS=[
+  null,
+  ['BOUNCE OFF THE WALL!','HARD WALL BOUNCES WIND MONSTER UP · WALLS NEVER HURT HIM'],
+  ['AGAIN! KEEP BOUNCING','EVERY BOUNCE STACKS (UP TO x4) · MORE STACKS, HARDER HIT'],
+  ['WOUND UP! NOW RAM WHIRL!','YOUR NEXT HIT SPENDS EVERY STACK'],
+  ['SMASH! THAT\'S THE TRICK','WALL, WALL, THEN RAM · REPEAT UNTIL WHIRL SHATTERS'],
+];
+function drawTutorial(c,g,y){
+  const me=g.fighters[0], T=g.tut; if(!me.mo) return;
+  const s=me.mo.stk;
+  if(T.step===0&&g.countdown<=0&&!g.waiting){T.step=1; T.t=g.time;}
+  if(T.step===1&&s>=1){T.step=2; T.t=g.time;}
+  if(T.step===2&&s>=2){T.step=3; T.t=g.time;}
+  if(T.step===2||T.step===3){ if(s>T.top) T.top=s; else if(s===0&&T.top>0){T.step=4; T.t=g.time;} }   // the stacks were spent on a hit
+  if(T.step===4&&g.time-T.t>4) T.step=5;
+  const m=TUT_STEPS[T.step]; if(!m||!me.alive||g.over) return;
+  const k=clamp((g.time-T.t)/.25,0,1), pop=1+.25*(1-k), big=Math.round(clamp(W/26,17,24)), sm=W<560?11:13;
+  c.save(); c.textAlign='center'; c.textBaseline='middle';
+  const lines=W<560?m[1].split(' · '):[m[1]];
+  const top=y-54-(lines.length-1)*16;   // clear of the how-to-steer hint underneath
+  c.font=`900 italic ${big}px ui-sans-serif,system-ui`; const tw=c.measureText(m[0]).width;
+  c.font=`800 ${sm}px ui-sans-serif,system-ui`; const sw=Math.max(...lines.map(l=>c.measureText(l).width));
+  c.fillStyle='rgba(6,6,12,.6)'; const pw=Math.min(W-16,Math.max(tw,sw)+40), ph=big+18+lines.length*16;
+  c.beginPath(); if(c.roundRect) c.roundRect(W/2-pw/2,top-big/2-12,pw,ph,12); else c.rect(W/2-pw/2,top-big/2-12,pw,ph); c.fill();
+  c.save(); c.translate(W/2,top); c.scale(pop,pop);
+  c.font=`900 italic ${big}px ui-sans-serif,system-ui`; c.fillStyle=T.step===4?'#ffffff':'#ffb36b'; c.fillText(m[0],0,0); c.restore();
+  c.font=`800 ${sm}px ui-sans-serif,system-ui`; c.fillStyle='rgba(226,232,240,.85)';
+  lines.forEach((l,i)=>c.fillText(l,W/2,top+big*.5+10+i*16));
+  c.restore();
 }
 let p1Keep=null;   // your saved CPU pick, kept aside while the Gauntlet borrows slot 2 for its rivals
 function setMode(m){
@@ -2291,7 +2398,7 @@ function renderCards(){
   $('#arenaLbl').textContent=gm?'THE LADDER':'ARENA';
   if(gm){
     $('#gLadder').innerHTML=ladderHTML();
-    $('#arenaDesc').textContent=`Four rivals, four arenas, no breaks. Damage carries over: each win repairs ${Math.round(G_HEAL*100)}% HP and half your lost plates.`;
+    $('#arenaDesc').textContent=`Four rivals on four arenas, each one tougher than the last. You start every round fully repaired, and you get ${G_RETRIES} retry per run.`;
     return;
   }
   $('#arenas').innerHTML=arenaPickHTML()+`
@@ -2402,17 +2509,33 @@ addEventListener('keyup',e=>{keys[e.code]=false;});
 addEventListener('blur',()=>{for(const k in keys) keys[k]=false; if(state==='game'&&game&&!game.over) setPause(true);});
 
 // very first visit: PLAY drops straight into a match (Monster vs a CPU Whirl, Classic arena: both quick, so the first fight starts fast); after that it opens the select screen
-$('#btnPlay').onclick=()=>{
-  let fresh=prog.played===0; try{if(localStorage.getItem(PICKS_KEY)!==null) fresh=false;}catch{}
-  if(!fresh){setMode('1p'); return;}
+const isFresh=()=>{let f=prog.played===0; try{if(localStorage.getItem(PICKS_KEY)!==null) f=false;}catch{} return f;};
+function firstMatch(){
   mode='1p'; p1Keep=null; sel[0].ctrl='human'; sel[1].ctrl='cpu'; activeSlot=0; sel[0].fighter='monster'; sel[1].fighter='whirl'; cpuRandom=false; selArena='classic';
   savePicks(); beginMatch();
-};
+}
+$('#btnPlay').onclick=()=>{ if(isFresh()) firstMatch(); else setMode('1p'); };
 $('#btn2p').onclick=()=>setMode('2p');
 $('#btnWatch').onclick=()=>setMode('cpu');
 $('#btnGauntlet').onclick=()=>setMode('gauntlet');
-function syncMenu(){ $('#gMenuSub').textContent=gStats.clears?`\u2605 CLEARED \u00d7${gStats.clears}`:gStats.best?`BEST: ${gStats.best}/${G_ROUNDS} ROUNDS`:'4-ROUND LADDER'; }
+$('#btnDaily').onclick=startDaily;
+function syncMenu(){
+  $('#gMenuSub').textContent=gStats.clears?`\u2605 CLEARED \u00d7${gStats.clears}`:gStats.best?`BEST: ${gStats.best}/${G_ROUNDS} ROUNDS`:'4-ROUND LADDER';
+  if(typeof ARENA_LIST==='undefined') return;   // (arenas.js loads after this file; the boot below syncs again)
+  const st=dailyStreak(), done=dailyDone(), d=dailyFor(dayKey());
+  $('#btnDaily').classList.toggle('done',done);
+  $('#dMenuTitle').innerHTML=done?'DAILY &#10003;':'DAILY CHALLENGE';
+  $('#dMenuSub').textContent=done?`STREAK ${st} \u00b7 NEW IN ${untilTomorrow()}`:`${DEFS[d.p0].name} VS ${DEFS[d.p1].name}${st?` \u00b7 STREAK ${st}`:''}`.toUpperCase();
+}
 syncMenu();
+// a new player's very first visit skips the menu: the first match is already on screen and starts on their first touch or key
+addEventListener('DOMContentLoaded',()=>{
+  syncMenu();
+  if(state==='menu'&&isFresh()){firstMatch(); if(game) game.waiting=true;}
+});
+function goLive(){ if(state==='game'&&game&&game.waiting&&!game.paused) game.waiting=false; }
+cv.addEventListener('pointerdown',goLive);
+addEventListener('keydown',e=>{ if(!['KeyM','KeyP','Escape','Tab'].includes(e.code)&&!e.ctrlKey&&!e.metaKey&&!e.altKey) goLive(); });
 $('#btnHow').onclick=()=>$('#how').classList.toggle('hidden');
 $('#btnBack').onclick=()=>setScreen('menu');
 $('#btnFight').onclick=beginMatch;
@@ -2424,7 +2547,7 @@ $('#pResume').onclick=()=>setPause(false);
 const afterAd=fn=>()=>Ads.commercial().then(fn);
 // REMATCH, or in the Gauntlet: NEXT ROUND after a win, a fresh ladder after a loss or a full clear
 function endAgain(){
-  if(mode==='gauntlet'&&gauntlet&&game&&game.gRound>=0){ if(gauntlet.next) gauntletNext(); else gauntletFresh(); }
+  if(mode==='gauntlet'&&gauntlet&&game&&game.gRound>=0){ if(gauntlet.next) gauntletNext(); else if(gauntlet.lost&&gauntlet.retries>0) gauntletRetry(); else gauntletFresh(); }
   else startGame();
 }
 $('#pRestart').onclick=afterAd(startGame);
@@ -2443,6 +2566,7 @@ let last=performance.now();
 function frame(now){
   const rdt=Math.min(.05,(now-last)/1000); last=now;
   const fired=pollPads();   // gamepads: steering is read by the fighters; Start pauses / resumes, A confirms the end screen
+  if(game&&game.waiting&&(fired.some(b=>b!==9)||pads.some(p=>p&&(p[0]||p[1])))) goLive();   // a pad starts the first match too
   if(fired.length&&state==='game'&&game){
     if(fired.includes(9)&&!(game.over&&game.endShown)) setPause(!game.paused);
     else if(fired.includes(0)&&game.endShown&&!$('#end').classList.contains('hidden')) $('#eAgain').click();

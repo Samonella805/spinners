@@ -61,7 +61,7 @@ function drawJoys(c,g){
     c.fillStyle=`rgba(${col},.55)`; c.strokeStyle='rgba(255,255,255,.7)';
     c.beginPath(); c.arc(kx,ky,24,0,TAU); c.fill(); c.stroke();
   }
-  if(TOUCH&&g&&!g.touched&&!g.over&&g.fighters.some(f=>f.ctrl==='human')){   // (gone once the match is decided: it would sit on the end screen's buttons)
+  if(TOUCH&&g&&!g.touched&&!g.over&&!g.waiting&&g.fighters.some(f=>f.ctrl==='human')){   // (gone once the match is decided: it would sit on the end screen's buttons)
     if(joys[0]||joys[1]) g.touched=true;
     else{
       const a=.55+.35*Math.sin(g.time*4), two=g.fighters.every(f=>f.ctrl==='human');

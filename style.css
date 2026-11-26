@@ -44,14 +44,30 @@ input[type=color]::-moz-color-swatch{border:none;border-radius:6px}
 .btn-gauntlet{background:linear-gradient(180deg,rgba(252,211,77,.16),rgba(252,211,77,.06));border:1px solid rgba(252,211,77,.45);color:#fde68a;box-shadow:0 0 26px rgba(252,211,77,.12)}
 .btn-gauntlet:hover{background:linear-gradient(180deg,rgba(252,211,77,.26),rgba(252,211,77,.1))}
 .btn-gauntlet span{color:rgba(253,230,138,.65)}
+/* one-off line on the menu (after the first match): the result, and a nudge to pick a mode */
+.menu-note{margin-top:1.25rem;margin-bottom:-1rem;padding:.45rem 1.1rem;border-radius:999px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.45);color:#6ee7b7;font-weight:900;font-size:12px;letter-spacing:.14em;animation:fi .4s ease both}
+@media (max-width:640px){.menu-note{font-size:11px;letter-spacing:.06em;padding:.4rem .8rem}}
+@media (max-height:500px) and (orientation:landscape){.menu-note{margin-top:.3rem;margin-bottom:0;padding:.2rem .9rem;font-size:10.5px}}
+/* daily challenge: full width under the grid, sky blue; dimmer once today's is beaten */
+#menu .menu-grid>.btn-daily{grid-column:1/-1;padding-top:.7rem;padding-bottom:.7rem}
+.btn-daily{background:linear-gradient(180deg,rgba(56,189,248,.18),rgba(56,189,248,.06));border:1px solid rgba(56,189,248,.5);color:#bae6fd;box-shadow:0 0 26px rgba(56,189,248,.14)}
+.btn-daily:hover{background:linear-gradient(180deg,rgba(56,189,248,.28),rgba(56,189,248,.1))}
+.btn-daily span{color:rgba(186,230,253,.7)}
+.btn-daily.done{opacity:.75;box-shadow:none}
+.round-badge.daily{border-color:rgba(56,189,248,.55);color:#bae6fd}
 @media (max-width:640px){
   .menu-grid{gap:.6rem;max-width:22rem}
   #menu .menu-grid>button{padding:.8rem .4rem;font-size:1.05rem;letter-spacing:.08em}
   #menu .menu-grid>button span{font-size:9.5px;letter-spacing:.12em}
 }
 @media (max-height:500px) and (orientation:landscape){
-  #menu .menu-grid{margin-top:1.25rem;max-width:30rem}
-  #menu .menu-grid>button{padding-top:.55rem;padding-bottom:.55rem}
+  #menu .menu-grid{margin-top:.6rem;max-width:30rem;gap:.5rem}
+  #menu .menu-grid>button{padding-top:.4rem;padding-bottom:.4rem}
+  #menu h1{font-size:2.6rem;line-height:1.05}   /* a phone on its side: everything fits in ~360px of height */
+  #menu>p:first-child{margin-bottom:.3rem}
+  #menu>h1+p{display:none}
+  #menu .menu-grid>.btn-daily{padding-top:.3rem;padding-bottom:.3rem}
+  #btnHow{margin-top:.4rem}
 }
 /* ---- gauntlet ladder preview on the select screen ---- */
 .g-ladder{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem;max-width:42rem;margin:0 auto}
